@@ -1,0 +1,681 @@
+<title>Solux Konzept</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: ein "Desktop" als Bühne mit dem Widget darauf, darunter Startbild/Icon und eine knappe Machbarkeitsübersicht. Bewusst nur dunkel (das Widget ist schwarz). */
+:root{
+  color-scheme: dark;
+  --black:#000;
+  --ink:#0a0a0b;
+  --panel:#111113;
+  --line:#232327;
+  --line2:#2f2f35;
+  --text:#ece8e1;
+  --muted:#8e8a83;
+  --dim:#5d5a55;
+  --sun:#f3b544;      /* Weißlicht/Bernstein, Akzent */
+  --ha:#d8442a;       /* H-Alpha-Rot */
+  --ok:#3dbb6c; --warn:#ef9230; --bad:#e5484d;
+  --desk1:#141a24; --desk2:#05070a;
+  --f-display:"Unbounded","Arial Black",system-ui,sans-serif;
+  --f-body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+[hidden]{display:none!important}
+html,body{background:var(--black);color:var(--text)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--f-display);font-weight:500;letter-spacing:.01em;text-wrap:balance;margin:0}
+h1{font-size:clamp(26px,4vw,38px)}
+h2{font-size:20px}
+h3{font-size:14px;font-family:var(--f-body);font-weight:700;letter-spacing:.02em}
+p{margin:0}
+.lead{color:var(--muted);max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--sun)}
+.note{font-family:var(--f-mono);font-size:11px;color:var(--dim)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--sun);outline-offset:2px}
+header.top{display:flex;flex-direction:column;gap:10px}
+
+/* ---------- Desktop-Bühne ---------- */
+.desk{position:relative;border-radius:14px;overflow:hidden;min-height:900px;border:1px solid var(--line);
+  background:radial-gradient(120% 90% at 80% 10%,#1d2633 0%,var(--desk1) 35%,var(--desk2) 100%)}
+.menubar{height:26px;display:flex;align-items:center;gap:18px;padding:0 14px;font-size:12px;color:#c9c6c0;background:rgba(0,0,0,.35);backdrop-filter:blur(8px)}
+.menubar b{font-weight:700}
+.menubar .r{margin-left:auto;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.desk-hint{position:absolute;right:18px;bottom:14px;max-width:260px;text-align:right}
+.desk-actions{position:absolute;right:18px;top:40px;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.ghost{border:1px solid var(--line2);border-radius:8px;padding:7px 12px;font-size:12px;color:var(--text);background:rgba(0,0,0,.4)}
+.ghost:hover{border-color:var(--sun);color:var(--sun)}
+
+/* ---------- Widget ---------- */
+.widget{position:absolute;left:40px;top:56px;width:min(430px,calc(100% - 32px));background:var(--black);border:1px solid var(--line);border-radius:16px;
+  box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.02) inset;display:flex;flex-direction:column;user-select:none;touch-action:none}
+.widget::after{content:"";position:absolute;inset:-5px;border-radius:20px;border:5px solid transparent;cursor:move;pointer-events:none}
+.w-top{display:flex;align-items:center;gap:4px;padding:8px 8px 0 10px;cursor:move}
+.tab{padding:6px 10px;border-radius:7px;font-size:12px;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--text);background:var(--panel)}
+.tab:hover{color:var(--text)}
+.grip{flex:1;height:18px}
+.xbtn{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:15px;line-height:1}
+.xbtn:hover{background:var(--bad);color:#fff}
+.w-hero{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px;padding:8px 12px 0}
+.sunbox{position:relative;aspect-ratio:1;max-width:100%;min-width:0}
+.sunbox canvas{width:100%;height:100%;display:block}
+.compass{position:absolute;font-family:var(--f-mono);font-size:9px;color:var(--dim)}
+.side{display:flex;flex-direction:column;gap:3px;min-width:0;padding-top:4px}
+.lbl{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.cap-date{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.cap-time{font-family:var(--f-mono);font-size:13px;color:var(--sun)}
+.cap-src{font-size:10.5px;color:var(--muted);margin-bottom:10px}
+.arlist{list-style:none;margin:2px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}
+.arbtn{width:100%;display:grid;grid-template-columns:auto 1fr;column-gap:6px;text-align:left;padding:4px 6px;border-radius:6px;border:1px solid transparent;font-variant-numeric:tabular-nums}
+.arbtn:hover{border-color:var(--line2);background:var(--panel)}
+.arbtn b{font-family:var(--f-mono);font-size:12px;font-weight:500}
+.arbtn span{font-family:var(--f-mono);font-size:12px;color:var(--sun)}
+.arbtn em{grid-column:1/-1;font-style:normal;font-size:10px;color:var(--muted)}
+.ephem{margin-top:auto;font-family:var(--f-mono);font-size:10px;color:var(--muted);line-height:1.6}
+.w-now{display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px 2px;border-top:1px solid var(--line);margin-top:10px}
+.w-now .d{font-weight:600}
+.w-now .t{font-family:var(--f-mono);font-size:17px;font-variant-numeric:tabular-nums}
+.w-graph{padding:2px 8px 0}
+.w-graph svg{width:100%;height:auto;display:block}
+.season{display:flex;justify-content:space-between;padding:0 14px;font-size:10.5px;color:var(--muted)}
+.w-status{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px}
+.st{border-radius:10px;padding:8px 10px;text-align:left;display:flex;flex-direction:column;gap:1px;border:1px solid transparent}
+.st b{font-size:12px}
+.st small{font-size:10.5px;opacity:.9;font-family:var(--f-mono)}
+.st.ok{background:color-mix(in srgb,var(--ok) 22%,#000);border-color:color-mix(in srgb,var(--ok) 55%,#000);color:#c9f2d8}
+.st.warn{background:color-mix(in srgb,var(--warn) 22%,#000);border-color:color-mix(in srgb,var(--warn) 55%,#000);color:#ffe0bf}
+.st.bad{background:color-mix(in srgb,var(--bad) 22%,#000);border-color:color-mix(in srgb,var(--bad) 55%,#000);color:#ffd0d1}
+.w-news{padding:2px 12px 6px;display:flex;flex-direction:column;gap:2px}
+.w-news .head{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 4px}
+.news{display:grid;grid-template-columns:8px 1fr auto;gap:8px;align-items:baseline;padding:6px 4px;border-top:1px solid var(--line)}
+.news i{width:8px;height:8px;border-radius:50%;display:block;transform:translateY(1px)}
+.news p{font-size:12px}
+.news p small{display:block;color:var(--muted);font-size:10.5px}
+.news time{font-family:var(--f-mono);font-size:10px;color:var(--dim)}
+.w-foot{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 10px 14px;border-top:1px solid var(--line)}
+.gear{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:var(--muted)}
+.gear:hover{color:var(--sun);background:var(--panel)}
+
+/* Overlays im Widget */
+.pop{position:absolute;inset:44px 10px 10px;background:rgba(10,10,11,.97);border:1px solid var(--line2);border-radius:12px;padding:16px;overflow:auto;z-index:5;display:flex;flex-direction:column;gap:12px;backdrop-filter:blur(6px)}
+.pop .hd{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.code{font-family:var(--f-mono);font-size:26px;color:var(--sun);letter-spacing:.06em}
+.decode{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px}
+.decode dt{font-family:var(--f-mono);color:var(--sun);font-size:13px}
+.decode dd{margin:0}
+.decode dd small{display:block;color:var(--muted)}
+.risk{font-size:12px;padding:8px 10px;border-radius:8px;background:var(--panel);border:1px solid var(--line2)}
+
+/* Einstellungen */
+.settings{display:grid;grid-template-columns:120px 1fr;gap:0;padding:0}
+.settings nav{border-right:1px solid var(--line);padding:12px 6px;display:flex;flex-direction:column;gap:2px}
+.settings nav button{text-align:left;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--muted)}
+.settings nav button.on{background:var(--panel);color:var(--text)}
+.settings .body{padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11px;color:var(--muted)}
+.field input,.field select{background:var(--ink);border:1px solid var(--line2);border-radius:7px;padding:6px 8px;color:var(--text);font:12px var(--f-body);min-width:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chk{display:flex;align-items:center;gap:8px;font-size:12px}
+.chk input{accent-color:var(--sun)}
+.pbtn{background:var(--sun);color:#1a1205;border-radius:8px;padding:8px 12px;font-weight:700;font-size:12px}
+.pbtn:hover{filter:brightness(1.08)}
+.upd{border:1px solid var(--line2);border-radius:10px;padding:10px;font-size:12px;display:flex;flex-direction:column;gap:8px}
+
+/* ---------- Aufnahmen-Fenster ---------- */
+.win{position:absolute;inset:40px 16px 16px auto;width:min(900px,calc(100% - 32px));background:#0b0b0c;border:1px solid var(--line2);border-radius:12px;box-shadow:0 40px 100px rgba(0,0,0,.7);display:flex;flex-direction:column;z-index:20;overflow:hidden}
+.win-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line);background:#121214}
+.lights{display:flex;gap:7px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.win-bar .t{flex:1;text-align:center;font-size:12px;font-weight:600;color:var(--muted)}
+.win-main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:0;flex:1;min-height:0}
+.drop{position:relative;margin:12px;border:1.5px dashed var(--line2);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:380px;background:#050506;overflow:hidden}
+.drop.over{border-color:var(--sun);background:#120d04}
+.drop canvas{max-width:100%;max-height:100%;display:block}
+.drop .ov{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
+.drop-hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:11px;color:var(--muted)}
+.drop-hint label{color:var(--sun);cursor:pointer;text-decoration:underline}
+.log{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:#060607}
+.log .hd{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.log pre{flex:1;margin:0;padding:10px 12px;font:11px/1.65 var(--f-mono);color:#b9b5ad;overflow:auto;white-space:pre-wrap;word-break:break-word;min-height:300px;max-height:470px}
+.log pre .ts{color:var(--dim)}
+.log pre .ok{color:var(--ok)}
+.log pre .hi{color:var(--sun)}
+.log pre .bar{color:var(--sun)}
+.cursor{display:inline-block;width:7px;height:12px;background:var(--sun);vertical-align:-1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.win-bottom{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);border-top:1px solid var(--line)}
+.txt{margin:0;padding:10px 14px;font:11px/1.55 var(--f-mono);color:#cfcac2;max-height:170px;overflow:auto;white-space:pre-wrap;border-right:1px solid var(--line)}
+.save{padding:12px;display:flex;flex-direction:column;gap:10px;justify-content:center}
+.save .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line2);padding:8px 14px;border-radius:8px;font-size:12px;z-index:40;max-width:calc(100% - 32px)}
+
+/* ---------- Splash ---------- */
+.splash{position:absolute;inset:0;display:grid;place-items:center;z-index:50;background:rgba(0,0,0,.55);transition:opacity .6s}
+.splash.hide{opacity:0;pointer-events:none}
+.splash-card{width:min(360px,80%);aspect-ratio:1;background:#000;border-radius:18px;border:1px solid #1a1a1a;box-shadow:0 40px 120px rgba(216,68,42,.25);overflow:hidden}
+.splash-card canvas{width:100%;height:100%;display:block}
+@media (prefers-reduced-motion:reduce){.splash{transition:none}.cursor{animation:none}}
+
+/* ---------- Sektionen unten ---------- */
+.show{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
+.card{border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;background:var(--ink);min-width:0}
+.icons{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.icons figure{margin:0;display:flex;flex-direction:column;gap:6px;align-items:center}
+.icons figcaption{font-family:var(--f-mono);font-size:10px;color:var(--dim)}
+.splash-static{width:min(300px,100%);aspect-ratio:1;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.splash-static canvas{width:100%;height:100%;display:block}
+.feas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.feas .card p{color:#c8c4bc;font-size:13px}
+.tag{display:inline-block;font-family:var(--f-mono);font-size:10px;padding:2px 7px;border-radius:99px;border:1px solid}
+.tag.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 50%,#000)}
+.tag.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,#000)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:12.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:400}
+td code{font-family:var(--f-mono);font-size:11px;color:var(--sun)}
+tr:last-child td{border-bottom:0}
+
+@media (max-width:900px){
+  .desk{min-height:auto;display:flex;flex-direction:column;gap:14px;padding-bottom:16px}
+  .widget{position:relative;left:auto!important;top:auto!important;margin:12px auto 0;transform:none!important}
+  .desk-actions{position:static;flex-direction:row;flex-wrap:wrap;justify-content:center;padding:0 12px}
+  .desk-hint{position:static;text-align:center;margin:0 auto;padding:0 12px}
+  .win{position:fixed;inset:10px;width:auto}
+  .win-main,.win-bottom{grid-template-columns:1fr}
+  .log{border-left:0;border-top:1px solid var(--line)}
+  .log pre{min-height:160px;max-height:220px}
+  .drop{min-height:260px}
+  .show,.feas{grid-template-columns:1fr}
+  .win{overflow:auto}
+}
+@media (max-width:420px){
+  .settings{grid-template-columns:1fr}
+  .settings nav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="eyebrow">Konzept-Prototyp · macOS Desktop-Widget</span>
+    <h1>Solux</h1>
+    <p class="lead">So könnte Solux aussehen: das schwarze Widget im Reiter <b>Sonne</b> auf dem Schreibtisch, das Fenster <b>Aufnahmen</b> mit Drag &amp; Drop und mitlaufendem Prozessprotokoll, Einstellungen und Startbild. Das Widget lässt sich am Rand verschieben. Sonnenhöhe, P-Winkel und B<sub>0</sub> werden live berechnet. Regionen, Wetter und Meldungen sind Beispieldaten.</p>
+  </header>
+
+  <!-- ================= Desktop ================= -->
+  <section class="desk" id="desk" aria-label="Simulierter Mac-Desktop">
+    <div class="menubar"><b>Solux</b><span>Ablage</span><span>Fenster</span><span>Hilfe</span><span class="r" id="menuClock"></span></div>
+
+    <div class="desk-actions">
+      <button class="ghost" id="replaySplash">Startbild erneut zeigen</button>
+      <button class="ghost" id="openRec2">Aufnahmen öffnen</button>
+    </div>
+    <p class="desk-hint note">Am Rand oder an der Titelzeile ziehen, um das Widget zu verschieben. Auf AR-Kürzel, Statusknöpfe oder das Zahnrad klicken.</p>
+
+    <div class="widget" id="widget">
+      <div class="w-top" id="dragBar">
+        <button class="tab on" id="tabSun">Sonne</button>
+        <button class="tab" id="tabRec">Aufnahmen</button>
+        <span class="grip"></span>
+        <button class="xbtn" id="quitBtn" aria-label="Solux beenden" title="Solux beenden">×</button>
+      </div>
+
+      <div class="w-hero">
+        <div class="sunbox">
+          <canvas id="sunCv" width="560" height="560" aria-label="Sonne im Weißlicht mit Fleckengruppen"></canvas>
+          <span class="compass" style="top:2px;left:50%;transform:translateX(-50%)">N</span>
+          <span class="compass" style="left:2px;top:50%;transform:translateY(-50%)">O</span>
+        </div>
+        <aside class="side">
+          <span class="lbl">Aufnahme</span>
+          <span class="cap-date" id="capDate">13.11.2026</span>
+          <span class="cap-time" id="capTime">10:30 UTC</span>
+          <span class="cap-src">SDO/HMI Kontinuum</span>
+          <span class="lbl">Fleckengruppen</span>
+          <ul class="arlist" id="arList"></ul>
+          <div class="ephem" id="ephem"></div>
+        </aside>
+      </div>
+
+      <div class="w-now"><span class="d" id="nowDate"></span><span class="t" id="nowTime"></span></div>
+      <div class="w-graph"><svg id="altSvg" viewBox="0 0 420 150" role="img" aria-label="Sonnenhöhe über den Tag"></svg></div>
+      <div class="season" id="season"></div>
+
+      <div class="w-status">
+        <button class="st ok" data-k="wetter"><b>Wetter</b><small>klar · 8 %</small></button>
+        <button class="st warn" data-k="seeing"><b>Seeing</b><small>okay · 2,4″</small></button>
+        <button class="st ok" data-k="wind"><b>Wind</b><small>1,8 m/s</small></button>
+      </div>
+
+      <div class="w-news">
+        <div class="head"><h3>Newsroom</h3><span class="note">Beispieldaten</span></div>
+        <div id="newsList"></div>
+      </div>
+
+      <div class="w-foot">
+        <span class="note">Quellen: NASA SDO · NOAA SWPC · Open-Meteo</span>
+        <button class="gear" id="gearBtn" aria-label="Einstellungen" title="Einstellungen">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        </button>
+      </div>
+
+      <!-- Popover: Fleckenklassifikation -->
+      <div class="pop" id="arPop" hidden></div>
+      <!-- Popover: Status-Detail -->
+      <div class="pop" id="stPop" hidden></div>
+
+      <!-- Einstellungen -->
+      <div class="pop settings" id="setPop" hidden>
+        <nav id="setNav">
+          <button data-s="allg" class="on">Allgemein</button>
+          <button data-s="ort">Standort</button>
+          <button data-s="daten">Daten &amp; Quellen</button>
+          <button data-s="aufn">Aufnahmen</button>
+          <button data-s="hinw">Hinweise</button>
+          <button data-s="upd">Updates</button>
+        </nav>
+        <div class="body" id="setBody"></div>
+      </div>
+    </div>
+
+    <!-- Aufnahmen-Fenster -->
+    <div class="win" id="recWin" hidden>
+      <div class="win-bar">
+        <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+        <span class="t">Solux · Aufnahmen</span>
+        <button class="xbtn" id="recClose" aria-label="Fenster schließen">×</button>
+      </div>
+      <div class="win-main">
+        <div class="drop" id="drop">
+          <canvas id="resCv" width="900" height="900"></canvas>
+          <canvas class="ov" id="ovCv" width="900" height="900"></canvas>
+          <p class="drop-hint">Eigene Sonnenaufnahme hierher ziehen oder <label for="fileIn">Datei wählen</label><input type="file" id="fileIn" accept="image/*" hidden></p>
+        </div>
+        <div class="log">
+          <div class="hd"><h3>Prozessablauf</h3><button class="ghost" id="rerun">Erneut verarbeiten</button></div>
+          <pre id="logPre" aria-live="polite"></pre>
+        </div>
+      </div>
+      <div class="win-bottom">
+        <pre class="txt" id="txtOut"></pre>
+        <div class="save">
+          <label class="chk"><input type="checkbox" id="legendChk" checked> Legende am rechten Bildrand</label>
+          <div class="field"><label for="saveDir">Zielordner</label><select id="saveDir"><option>~/Bilder/Sonne/2026</option><option>~/Desktop</option><option>Anderer Ordner …</option></select></div>
+          <div class="row"><button class="pbtn" id="saveBtn">Speichern</button><span class="note">JPEG · Qualität 95 % · + .txt</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="splash" id="splash"><div class="splash-card"><canvas id="splashCv" width="720" height="720"></canvas></div></div>
+    <div class="toast" id="toast" hidden></div>
+  </section>
+
+  <!-- ================= Startbild & Icon ================= -->
+  <section class="show">
+    <div class="card">
+      <span class="eyebrow">Startbild</span>
+      <h2>H-Alpha-Sonne mit Schriftzug</h2>
+      <p class="lead">Erscheint ca. 2 Sekunden nach manuellem Start und nach jedem Update. Rand schwarz, Protuberanzen am Sonnenrand, Filamente auf der Scheibe.</p>
+      <div class="splash-static"><canvas id="splashCv2" width="720" height="720"></canvas></div>
+    </div>
+    <div class="card">
+      <span class="eyebrow">App-Icon</span>
+      <h2>Sonne mit Schriftzug</h2>
+      <p class="lead">macOS-Squircle, schwarzer Grund, Sonnenscheibe mit „Solux“. In Dock und Finder lesbar ab 32&nbsp;px.</p>
+      <div class="icons" id="icons"></div>
+    </div>
+  </section>
+
+  <!-- ================= Machbarkeit ================= -->
+  <section style="display:flex;flex-direction:column;gap:16px">
+    <span class="eyebrow">Umsetzbarkeit</span>
+    <h2>Was geht, wie, und wo die Grenzen liegen</h2>
+    <div class="feas">
+      <div class="card"><span class="tag ok">machbar</span><h3>Widget auf dem Desktop</h3><p>Native Mac-App mit SwiftUI. Ein randloses Fenster auf Desktop-Ebene, frei verschiebbar, optional „bei Anmeldung starten“. Die WidgetKit-Widgets von macOS sind dafür zu eingeschränkt (kein Drag &amp; Drop, keine Live-Animation).</p></div>
+      <div class="card"><span class="tag ok">machbar</span><h3>Updates mit Neustart</h3><p>Das Framework Sparkle übernimmt Prüfen, Laden, Beenden, Installieren und Neustart. Voraussetzung: Signatur mit Apple-Developer-ID und Notarisierung (Apple Developer Program, 99 $/Jahr).</p></div>
+      <div class="card"><span class="tag warn">machbar mit Grenzen</span><h3>Automatische Ausrichtung</h3><p>Scheibe erkennen, Aufnahmezeit aus EXIF, Abgleich der Fleckenmuster mit dem SDO-Bild zur selben Zeit. Funktioniert ab etwa zwei Fleckengruppen. Bei fleckenfreier Sonne: Fallback auf gespeicherte Montierungs-/Kameradrehung oder manuelles Drehen.</p></div>
+    </div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Bereich</th><th>Quelle</th><th>Historie abrufbar?</th></tr></thead>
+        <tbody>
+          <tr><td>Weißlichtbild</td><td>NASA SDO/HMI Kontinuum (aktuell); Helioviewer-API bzw. JSOC für beliebige Zeitpunkte</td><td>Ja, seit 2010 · lokales Speichern nicht nötig</td></tr>
+          <tr><td>Regionen, McIntosh, Mt.-Wilson</td><td>NOAA SWPC Solar Region Summary (JSON + tägliche SRS-Texte)</td><td>Ja, SRS-Archiv · Cache für Offline &amp; Tempo sinnvoll</td></tr>
+          <tr><td>Flares, Kp, Polarlichter, Alarme</td><td>NOAA SWPC JSON (GOES-Röntgen, Kp, OVATION, Alerts)</td><td>Nur Tage bis Wochen → 60-Tage-Cache in SQLite</td></tr>
+          <tr><td>CMEs, Ereignisse</td><td>NASA DONKI (kostenloser API-Key)</td><td>Ja</td></tr>
+          <tr><td>Wetter, Wind, Wolken</td><td>Open-Meteo (ohne Key)</td><td>nicht nötig</td></tr>
+          <tr><td>Seeing (Tag)</td><td>Kein offener Dienst für Tages-Seeing. Schätzung aus Wind, Jetstream, Temperaturgradient und Sonnenhöhe; optional meteoblue (kostenpflichtig)</td><td>nicht nötig</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+(()=>{
+const $=s=>document.querySelector(s);
+const D2R=Math.PI/180,R2D=180/Math.PI;
+const sin=x=>Math.sin(x*D2R),cos=x=>Math.cos(x*D2R),tan=x=>Math.tan(x*D2R);
+
+/* ---------- Seeded PRNG ---------- */
+function rng(seed){let s=seed>>>0;return()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+
+/* ---------- Beispiel-Regionen (Positionen in Sonnenradien, Norden oben, Osten links) ---------- */
+const REGIONS=[
+  {ar:'4281',mc:'Ekc',mw:'βγδ',x:-0.40,y:0.24,area:620,nn:31,loc:'N14E24',lab:[.04,.17],spots:[[0,0,.075],[.12,.025,.05],[.06,-.035,.035],[.19,.04,.028],[.03,.04,.02]]},
+  {ar:'4283',mc:'Cao',mw:'β',x:0.22,y:-0.30,area:90,nn:7,loc:'S17W13',lab:[.08,-.17],spots:[[0,0,.04],[.09,.01,.014],[.11,-.01,.01]]},
+  {ar:'4285',mc:'Hsx',mw:'α',x:0.62,y:0.16,area:70,nn:1,loc:'N09W39',lab:[-.02,.15],spots:[[0,0,.04]]},
+  {ar:'4286',mc:'Bxo',mw:'β',x:-0.12,y:-0.18,area:10,nn:4,loc:'S10E07',lab:[-.12,.14],spots:[[0,0,.012],[.05,.005,.01],[.07,-.01,.008]]}
+];
+
+/* ---------- Weißlicht-Sonne zeichnen ---------- */
+function drawWhiteLight(cv,{rot=0,labels='short',seed=7,flip=false}={}){
+  const ctx=cv.getContext('2d'),W=cv.width,c=W/2,R=W*.455;
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle='#000';ctx.fillRect(0,0,W,W);
+  ctx.save();ctx.translate(c,c);ctx.rotate(rot*D2R);if(flip)ctx.scale(-1,1);ctx.translate(-c,-c);
+  const g=ctx.createRadialGradient(c,c,0,c,c,R);
+  for(let i=0;i<=24;i++){const r=i/24,mu=Math.sqrt(Math.max(0,1-r*r)),I=1-.6*(1-mu)-.12*(1-mu)**2;
+    g.addColorStop(r,`rgb(${255*I|0},${(238*Math.pow(I,1.1))|0},${(205*Math.pow(I,1.35))|0})`)}
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(c,c,R,0,7);ctx.fill();
+  ctx.save();ctx.beginPath();ctx.arc(c,c,R,0,7);ctx.clip();
+  const rnd=rng(seed);
+  for(let i=0;i<W*W/22;i++){const a=rnd()*7,rr=Math.sqrt(rnd())*R,x=c+Math.cos(a)*rr,y=c+Math.sin(a)*rr;
+    ctx.fillStyle=rnd()<.5?'rgba(0,0,0,.05)':'rgba(255,250,235,.05)';ctx.beginPath();ctx.arc(x,y,.6+rnd()*1.4*W/560,0,7);ctx.fill()}
+  // Fackeln nahe Rand bei Regionen
+  for(const g0 of REGIONS){const d=Math.hypot(g0.x,g0.y);if(d<.35)continue;
+    for(let k=0;k<26;k++){const x=c+(g0.x+(rnd()-.4)*.22)*R,y=c-(g0.y+(rnd()-.5)*.14)*R;
+      ctx.fillStyle=`rgba(255,248,225,${.06+.1*d})`;ctx.beginPath();ctx.ellipse(x,y,R*.012*(1+rnd()),R*.006,rnd()*3,0,7);ctx.fill()}}
+  // Flecken
+  for(const g0 of REGIONS){for(const [dx,dy,pr] of g0.spots){
+    const X=g0.x+dx,Y=g0.y+dy,d=Math.min(.98,Math.hypot(X,Y)),mu=Math.sqrt(1-d*d),ang=Math.atan2(-Y,X);
+    const px=c+X*R,py=c-Y*R;ctx.save();ctx.translate(px,py);ctx.rotate(ang);ctx.scale(Math.max(.25,mu),1);
+    const pen=ctx.createRadialGradient(0,0,pr*R*.3,0,0,pr*R);pen.addColorStop(0,'rgba(70,45,25,.95)');pen.addColorStop(.7,'rgba(120,85,50,.85)');pen.addColorStop(1,'rgba(150,110,70,0)');
+    ctx.fillStyle=pen;ctx.beginPath();ctx.arc(0,0,pr*R,0,7);ctx.fill();
+    if(pr>.015){ctx.fillStyle='rgba(18,10,6,.95)';ctx.beginPath();ctx.ellipse(0,0,pr*R*.42,pr*R*.36,.4,0,7);ctx.fill()}
+    ctx.restore()}}
+  ctx.restore();ctx.restore();
+  if(labels){ctx.font=`500 ${Math.round(W*(labels==='short'?.032:.026))}px "JetBrains Mono",monospace`;ctx.textBaseline='middle';
+    ctx.textAlign='center';for(const g0 of REGIONS){const t=labels==='short'?g0.ar:`AR ${g0.ar} ${g0.mc}`,p=rotPt(g0.x+.05,g0.y,rot,flip),q=rotPt(g0.x+.05+g0.lab[0],g0.y+g0.lab[1],rot,flip),x=c+p[0]*R,y=c-p[1]*R,lx=c+q[0]*R,ly=c-q[1]*R,up=ly<y;
+      ctx.strokeStyle='rgba(243,181,68,.8)';ctx.lineWidth=W/560;ctx.beginPath();ctx.moveTo(x+(lx-x)*.3,y+(ly-y)*.3);ctx.lineTo(lx,ly+(up?W*.022:-W*.022));ctx.stroke();
+      ctx.fillStyle='#f3b544';ctx.fillText(t,lx,ly)}ctx.textAlign='start'}
+  return {c,R};
+}
+function rotPt(x,y,rot,flip){const q=new DOMMatrix().rotate(rot).scale(flip?-1:1,1).transformPoint({x:x,y:-y});return[q.x,-q.y]}
+
+/* ---------- H-Alpha-Startbild ---------- */
+function drawHalpha(cv){
+  const ctx=cv.getContext('2d'),W=cv.width,c=W/2,R=W*.33,rnd=rng(42);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,W);
+  // Protuberanzen
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  const proms=[[200,.17,.09],[320,.12,.06],[35,.09,.05],[115,.14,.07],[260,.06,.04]];
+  for(const [a,h,wd] of proms){for(let k=0;k<70;k++){const aa=(a+(rnd()-.5)*wd*90)*D2R,hh=R*(1+rnd()*h*(1-Math.abs(rnd()-.5)));
+    ctx.fillStyle=`rgba(${200+rnd()*55|0},${50+rnd()*40|0},20,${.05+rnd()*.07})`;ctx.beginPath();ctx.arc(c+Math.cos(aa)*hh,c+Math.sin(aa)*hh,W*.004+rnd()*W*.012,0,7);ctx.fill()}}
+  // Spiculen-Saum
+  for(let i=0;i<900;i++){const a=rnd()*7,h=R*(1+rnd()*.03);ctx.fillStyle='rgba(230,70,30,.06)';ctx.beginPath();ctx.arc(c+Math.cos(a)*h,c+Math.sin(a)*h,W*.003,0,7);ctx.fill()}
+  ctx.restore();
+  const g=ctx.createRadialGradient(c,c,0,c,c,R);g.addColorStop(0,'#c63c1f');g.addColorStop(.75,'#a92e16');g.addColorStop(1,'#6e170a');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(c,c,R,0,7);ctx.fill();
+  ctx.save();ctx.beginPath();ctx.arc(c,c,R,0,7);ctx.clip();
+  for(let i=0;i<9000;i++){const a=rnd()*7,rr=Math.sqrt(rnd())*R;ctx.fillStyle=rnd()<.55?'rgba(60,8,2,.10)':'rgba(255,120,70,.08)';
+    ctx.beginPath();ctx.arc(c+Math.cos(a)*rr,c+Math.sin(a)*rr,W*.002+rnd()*W*.006,0,7);ctx.fill()}
+  // Plages
+  for(const [px,py] of [[-.4,.24],[.22,-.3],[.6,.16]]){for(let k=0;k<60;k++){ctx.fillStyle='rgba(255,170,110,.09)';ctx.beginPath();
+    ctx.arc(c+(px+(rnd()-.5)*.25)*R,c-(py+(rnd()-.5)*.16)*R,W*.006+rnd()*W*.012,0,7);ctx.fill()}}
+  // Filamente
+  ctx.lineCap='round';
+  for(let f=0;f<7;f++){let x=c+(rnd()-.5)*1.4*R,y=c+(rnd()-.5)*1.4*R,a=rnd()*7;ctx.strokeStyle=`rgba(40,4,0,${.45+rnd()*.3})`;
+    ctx.lineWidth=W*.004+rnd()*W*.005;ctx.beginPath();ctx.moveTo(x,y);for(let s=0;s<14;s++){a+=(rnd()-.5)*.7;x+=Math.cos(a)*W*.012;y+=Math.sin(a)*W*.012;ctx.lineTo(x,y)}ctx.stroke()}
+  ctx.restore();
+  // Schriftzug
+  ctx.font=`700 ${W*.1}px Unbounded, "Arial Black", sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.shadowColor='rgba(255,140,90,.8)';ctx.shadowBlur=W*.03;ctx.fillStyle='#fff1e4';
+  if(ctx.letterSpacing!==undefined)ctx.letterSpacing=`${W*.012}px`;
+  ctx.fillText('SOLUX',c,c+W*.005);ctx.shadowBlur=0;
+}
+
+/* ---------- Icon ---------- */
+function iconSVG(sz){return `<svg width="${sz}" height="${sz}" viewBox="0 0 100 100" role="img" aria-label="Solux App-Icon ${sz}px">
+<defs><radialGradient id="ig${sz}" cx="45%" cy="40%" r="60%"><stop offset="0" stop-color="#ffe09a"/><stop offset=".6" stop-color="#f3b544"/><stop offset="1" stop-color="#d9771f"/></radialGradient>
+<radialGradient id="gl${sz}" r=".5"><stop offset=".55" stop-color="#f3b544" stop-opacity=".45"/><stop offset="1" stop-color="#f3b544" stop-opacity="0"/></radialGradient></defs>
+<rect x="2" y="2" width="96" height="96" rx="22" fill="#000"/><rect x="2.5" y="2.5" width="95" height="95" rx="21.5" fill="none" stroke="#222"/>
+<circle cx="50" cy="50" r="42" fill="url(#gl${sz})"/><circle cx="50" cy="50" r="31" fill="url(#ig${sz})"/>
+<text x="50" y="54.5" text-anchor="middle" font-family="Unbounded, Arial Black, sans-serif" font-weight="700" font-size="13.5" fill="#1a0f03" letter-spacing=".5">Solux</text></svg>`}
+$('#icons').innerHTML=[128,64,32].map(s=>`<figure>${iconSVG(s)}<figcaption>${s} px</figcaption></figure>`).join('');
+
+/* ---------- Ephemeriden (Meeus, vereinfacht) ---------- */
+function jd(d){return d.getTime()/864e5+2440587.5}
+function ephem(d){const J=jd(d),T=(J-2451545)/36525,L0=280.46646+36000.76983*T,M=357.52911+35999.05029*T;
+  const C=(1.914602-.004817*T)*sin(M)+(.019993-.000101*T)*sin(2*M)+.000289*sin(3*M),om=125.04-1934.136*T;
+  const lam=L0+C-.00569-.00478*sin(om),eps=23.439291-.0130042*T+.00256*cos(om),K=73.6667+1.3958333*(J-2396758)/36525;
+  const x=Math.atan(-cos(lam)*tan(eps))*R2D,y=Math.atan(-cos(lam-K)*tan(7.25))*R2D;
+  return{P:x+y,B0:Math.asin(sin(lam-K)*sin(7.25))*R2D}}
+function altitude(d,lat,lon){const n=jd(d)-2451545,L=280.46+.9856474*n,g=357.528+.9856003*n,lam=L+1.915*sin(g)+.02*sin(2*g),eps=23.439-4e-7*n;
+  const ra=Math.atan2(cos(eps)*sin(lam),cos(lam))*R2D,dec=Math.asin(sin(eps)*sin(lam))*R2D,gmst=(18.697374558+24.06570982441908*n)%24,ha=gmst*15+lon-ra;
+  return Math.asin(sin(lat)*sin(dec)+cos(lat)*cos(dec)*cos(ha))*R2D}
+
+/* ---------- Zustand ---------- */
+const S={place:'Kassel (Beispiel)',lat:51.31,lon:9.48};
+const fmtD=new Intl.DateTimeFormat('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'});
+const fmtT=new Intl.DateTimeFormat('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+/* ---------- Widget füllen ---------- */
+drawWhiteLight($('#sunCv'),{labels:'short'});
+$('#arList').innerHTML=REGIONS.map((r,i)=>`<li><button class="arbtn" data-i="${i}"><b>${r.ar}</b><span>${r.mc}</span><em>${r.mw} · ${r.loc}</em></button></li>`).join('');
+function setEphem(){const e=ephem(new Date());$('#ephem').innerHTML=`P ${e.P>=0?'+':''}${e.P.toFixed(1)}°<br>B₀ ${e.B0>=0?'+':''}${e.B0.toFixed(2)}°<br>SN 142 · F10.7 168`}
+setEphem();
+
+const NEWS=[
+  ['var(--bad)','Polarlichter möglich','Kp 6 (G2) für die Nacht erwartet, Sichtbarkeit bis ca. 50° N','vor 25 min'],
+  ['var(--warn)','M2.4-Flare aus AR 4281','Maximum 09:12 UTC, Radio-Blackout R1','vor 1 h'],
+  ['var(--warn)','CME erdgerichtet','Auswurf vom 12.11., Ankunft 14.11. ± 12 h','vor 5 h'],
+  ['var(--ok)','Neue Region AR 4286','Bxo, am Ostrand aufgetaucht','vor 9 h']];
+$('#newsList').innerHTML=NEWS.map(n=>`<div class="news"><i style="background:${n[0]}"></i><p>${n[1]}<small>${n[2]}</small></p><time>${n[3]}</time></div>`).join('');
+
+/* Uhr */
+function tick(){const d=new Date();$('#nowDate').textContent=fmtD.format(d);$('#nowTime').textContent=fmtT.format(d);
+  $('#menuClock').textContent=fmtD.format(d)+'  '+fmtT.format(d).slice(0,5)}
+tick();setInterval(tick,1000);
+
+/* Sonnenhöhen-Graph */
+function drawAlt(){
+  const svg=$('#altSvg'),W=420,H=150,pl=30,pr=8,pt=10,pb=20,ymin=-10,ymax=65,now=new Date(),y0=now.getFullYear();
+  const X=h=>pl+(W-pl-pr)*h/24,Y=a=>pt+(H-pt-pb)*(ymax-Math.max(ymin,Math.min(ymax,a)))/(ymax-ymin);
+  const curve=day=>{let p='';for(let m=0;m<=1440;m+=10){const d=new Date(day.getFullYear(),day.getMonth(),day.getDate(),0,m);p+=(m?'L':'M')+X(m/60).toFixed(1)+','+Y(altitude(d,S.lat,S.lon)).toFixed(1)}return p};
+  const today=new Date(y0,now.getMonth(),now.getDate()),sum=new Date(y0,5,21),win=new Date(y0,11,21);
+  let maxA=-90,maxH=0;for(let m=0;m<=1440;m+=2){const a=altitude(new Date(y0,now.getMonth(),now.getDate(),0,m),S.lat,S.lon);if(a>maxA){maxA=a;maxH=m/60}}
+  const cur=altitude(now,S.lat,S.lon),hn=now.getHours()+now.getMinutes()/60;
+  let g='';
+  for(const a of [0,20,40,60]){g+=`<line x1="${pl}" x2="${W-pr}" y1="${Y(a)}" y2="${Y(a)}" stroke="${a?'#1c1c20':'#3a3a40'}" stroke-width="1"/><text x="${pl-5}" y="${Y(a)+3}" fill="#5d5a55" font-size="9" text-anchor="end" font-family="JetBrains Mono">${a}°</text>`}
+  for(const h of [0,6,12,18,24]){g+=`<text x="${X(h)}" y="${H-6}" fill="#5d5a55" font-size="9" text-anchor="middle" font-family="JetBrains Mono">${String(h).padStart(2,'0')}</text>`}
+  g+=`<path d="${curve(sum)}" fill="none" stroke="#f3b544" stroke-opacity=".28" stroke-dasharray="3 3"/>`;
+  g+=`<path d="${curve(win)}" fill="none" stroke="#7fa7d9" stroke-opacity=".35" stroke-dasharray="3 3"/>`;
+  const tp=curve(today);
+  g+=`<clipPath id="above"><rect x="0" y="0" width="${W}" height="${Y(0)}"/></clipPath><path d="${tp}L${X(24)},${Y(0)}L${X(0)},${Y(0)}Z" fill="#f3b544" fill-opacity=".14" clip-path="url(#above)"/>`;
+  g+=`<path d="${tp}" fill="none" stroke="#f3b544" stroke-width="2"/>`;
+  g+=`<line x1="${X(hn)}" x2="${X(hn)}" y1="${pt}" y2="${H-pb}" stroke="#ece8e1" stroke-opacity=".25"/>`;
+  g+=`<circle cx="${X(hn)}" cy="${Y(cur)}" r="5" fill="${cur>0?'#ffd77a':'#3a3a40'}" stroke="#000" stroke-width="2"/>`;
+  g+=`<text x="${W-pr}" y="${pt+8}" fill="#ece8e1" font-size="10.5" text-anchor="end" font-family="Manrope" font-weight="600">jetzt ${cur.toFixed(1)}° · max ${maxA.toFixed(1)}° um ${String(maxH|0).padStart(2,'0')}:${String(Math.round(maxH%1*60)).padStart(2,'0')}</text>`;
+  g+=`<text x="${pl+4}" y="${pt+8}" fill="#f3b544" fill-opacity=".6" font-size="9" font-family="Manrope">Sommer 21.6.</text><text x="${pl+4}" y="${pt+19}" fill="#7fa7d9" fill-opacity=".7" font-size="9" font-family="Manrope">Winter 21.12.</text>`;
+  svg.innerHTML=g;
+  // Jahreszeit
+  const ev=[[2,20,'Frühling'],[5,21,'Sommer'],[8,22,'Herbst'],[11,21,'Winter']];
+  let season='Winter',next=null;for(const [m,d,n] of ev){const t=new Date(y0,m,d);if(now>=t)season=n;else if(!next)next=[t,n]}
+  if(!next)next=[new Date(y0+1,2,20),'Frühling'];
+  const days=Math.ceil((next[0]-now)/864e5),evName={Frühling:'Frühlingsanfang',Sommer:'Sommersonnenwende',Herbst:'Herbstanfang',Winter:'Wintersonnenwende'}[next[1]];
+  $('#season').innerHTML=`<span>${season} · ${S.place}</span><span>${days} Tage bis ${evName}</span>`;
+}
+drawAlt();setInterval(drawAlt,60000);
+
+/* ---------- McIntosh-Erklärung ---------- */
+const Z={A:'Einzelfleck oder unipolare Gruppe ohne Penumbra',B:'Bipolare Gruppe ohne Penumbra',C:'Bipolar, Penumbra an einem Ende',D:'Bipolar, Penumbra an beiden Enden, Ausdehnung < 10°',E:'Bipolar, Penumbra an beiden Enden, 10–15°',F:'Bipolar, Penumbra an beiden Enden, > 15°',H:'Unipolar mit Penumbra'};
+const P={x:'keine Penumbra',r:'rudimentäre Penumbra',s:'klein, symmetrisch (≤ 2,5°)',a:'klein, asymmetrisch (≤ 2,5°)',h:'groß, symmetrisch (> 2,5°)',k:'groß, asymmetrisch (> 2,5°)'};
+const Cc={x:'Einzelfleck',o:'offen: wenige Flecken zwischen Haupt- und Folgefleck',i:'mittel: einige Flecken zwischen den Hauptflecken',c:'kompakt: viele Flecken, mindestens einer mit Penumbra dazwischen'};
+const MW={'α':'unipolar','β':'bipolar, einfache Polaritätsgrenze','γ':'komplexe Polaritätsverteilung','δ':'Umbren entgegengesetzter Polarität in einer gemeinsamen Penumbra'};
+const RISK={Ekc:['Hoch','Große, kompakte Gruppe mit δ-Konfiguration. M-Flares wahrscheinlich, X-Flares möglich.','var(--bad)'],Cao:['Gering','Junge bipolare Gruppe, ruhig.','var(--ok)'],Hsx:['Gering','Alter, stabiler Einzelfleck (Folgefleck aufgelöst).','var(--ok)'],Bxo:['Sehr gering','Kleine Porengruppe, oft kurzlebig.','var(--ok)']};
+function showAR(i){const r=REGIONS[i],[z,p,c]=r.mc,rk=RISK[r.mc];
+  $('#arPop').innerHTML=`<div class="hd"><div><span class="lbl">NOAA Active Region</span><h2>AR ${r.ar}</h2></div><button class="xbtn" data-close="arPop" aria-label="Schließen">×</button></div>
+  <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap"><span class="code">${r.mc}</span><span class="note">Mt. Wilson ${r.mw} · ${r.loc} · ${r.area} MH · ${r.nn} Flecken</span></div>
+  <dl class="decode"><dt>${z}</dt><dd>Zürich-Klasse<small>${Z[z]}</small></dd><dt>${p}</dt><dd>Penumbra des größten Flecks<small>${P[p]}</small></dd><dt>${c}</dt><dd>Fleckenverteilung<small>${Cc[c]}</small></dd>
+  ${[...r.mw].map(ch=>`<dt>${ch}</dt><dd>Magnetklasse<small>${MW[ch]}</small></dd>`).join('')}</dl>
+  <div class="risk"><b style="color:${rk[2]}">Flare-Potenzial: ${rk[0]}</b><br>${rk[1]}</div>
+  <p class="note">MH = millionstel Sonnenhemisphäre. Daten: NOAA SWPC SRS (hier Beispiel).</p>`;
+  $('#arPop').hidden=false}
+$('#arList').addEventListener('click',e=>{const b=e.target.closest('.arbtn');if(b)showAR(+b.dataset.i)});
+
+/* Status-Details */
+const ST={wetter:['Wetter','Bewölkung 8 %, Sicht 30 km. Nächste Stunden: bis 13 Uhr klar, danach Quellwolken (40 %).','Grün = klar, Orange = Sonne/Wolken-Mix, Rot = bedeckt oder Niederschlag.'],
+  seeing:['Seeing','Geschätzt 2,4″ (Fried-Parameter r₀ ≈ 4 cm). Bodennahe Turbulenz steigt ab Mittag. Beste Phase: 09:30–11:00.','Grün < 2″, Orange 2–3,5″, Rot > 3,5″. Schätzung aus Wind, Jetstream, Temperaturgradient und Sonnenhöhe.'],
+  wind:['Wind','1,8 m/s aus Südwest, Böen 3,5 m/s.','Grün < 2 m/s, Orange 2–5 m/s, Rot darüber.']};
+document.querySelectorAll('.st').forEach(b=>b.addEventListener('click',()=>{const s=ST[b.dataset.k];
+  $('#stPop').innerHTML=`<div class="hd"><h2>${s[0]}</h2><button class="xbtn" data-close="stPop" aria-label="Schließen">×</button></div><p>${s[1]}</p><p class="note">${s[2]}</p><p class="note">Quelle: Open-Meteo (hier Beispiel)</p>`;$('#stPop').hidden=false}));
+
+/* ---------- Einstellungen ---------- */
+const SET={
+  allg:()=>`<h3>Allgemein</h3><label class="chk"><input type="checkbox" id="s1" checked> Bei Anmeldung starten</label><label class="chk"><input type="checkbox" id="s2" checked> Auf Desktop-Ebene (hinter Fenstern)</label><label class="chk"><input type="checkbox" id="s3"> Position fixieren</label><div class="field"><label for="s4">Transparenz</label><input id="s4" type="range" min="60" max="100" value="100"></div><label class="chk"><input type="checkbox" id="s5" checked> Startbild anzeigen</label>`,
+  ort:()=>`<h3>Standort</h3><div class="field"><label for="o1">Ort</label><input id="o1" value="${S.place}"></div><div class="row2"><div class="field"><label for="o2">Breite °N</label><input id="o2" type="number" step=".01" value="${S.lat}"></div><div class="field"><label for="o3">Länge °E</label><input id="o3" type="number" step=".01" value="${S.lon}"></div></div><div class="row2"><div class="field"><label for="o4">Höhe m</label><input id="o4" type="number" value="180"></div><div class="field"><label for="o5">Zeitzone</label><select id="o5"><option>Europe/Berlin</option></select></div></div><div class="field"><label for="o6">Horizont / Hindernisse</label><select id="o6"><option>Freier Horizont</option><option>Eigenes Horizontprofil …</option></select></div><p class="note">Graph und Jahreszeit aktualisieren sich sofort.</p>`,
+  daten:()=>`<h3>Daten &amp; Quellen</h3><div class="field"><label for="d1">Sonnenbild</label><select id="d1"><option>SDO/HMI Kontinuum (NASA)</option><option>GONG Weißlicht</option></select></div><div class="field"><label for="d2">Aktualisierung</label><select id="d2"><option>alle 15 Minuten</option><option>stündlich</option></select></div><div class="field"><label for="d3">Lokaler Verlauf</label><select id="d3"><option>60 Tage (≈ 40 MB)</option><option>30 Tage</option><option>90 Tage</option></select></div><p class="note">Zuletzt synchronisiert: vor 4 min · Cache 38,2 MB</p>`,
+  aufn:()=>`<h3>Aufnahmen</h3><div class="field"><label for="a1">Standard-Zielordner</label><select id="a1"><option>~/Bilder/Sonne/2026</option></select></div><div class="row2"><div class="field"><label for="a2">JPEG-Qualität</label><input id="a2" type="number" min="70" max="100" value="95"></div><div class="field"><label for="a3">Beschriftung</label><select id="a3"><option>AR + McIntosh</option><option>nur AR-Nummer</option></select></div></div><label class="chk"><input type="checkbox" id="a4" checked> Legende standardmäßig anhängen</label><label class="chk"><input type="checkbox" id="a5" checked> Gradnetz (Heliografisch) einblenden</label><div class="field"><label for="a6">Fallback-Drehung ohne Flecken</label><input id="a6" value="Kamera 0°, Zenitspiegel aus"></div>`,
+  hinw:()=>`<h3>Hinweise</h3><label class="chk"><input type="checkbox" id="h1" checked> Flares ab Klasse M1</label><label class="chk"><input type="checkbox" id="h2" checked> Polarlicht-Chance ab Kp 5</label><label class="chk"><input type="checkbox" id="h3"> Neue Regionen</label><label class="chk"><input type="checkbox" id="h4" checked> Gutes Beobachtungsfenster (alle drei Ampeln grün)</label>`,
+  upd:()=>`<h3>Updates</h3><div class="upd"><span>Installiert: <b>Solux 1.0.0</b> (Build 100)</span><label class="chk"><input type="checkbox" id="u1" checked> Automatisch nach Updates suchen</label><button class="pbtn" id="chkUpd" style="align-self:flex-start">Nach Updates suchen</button><div id="updRes"></div></div><p class="note">Beim Installieren wird Solux beendet, aktualisiert und mit Startbild neu geöffnet.</p>`
+};
+function showSet(k){document.querySelectorAll('#setNav button').forEach(b=>b.classList.toggle('on',b.dataset.s===k));
+  $('#setBody').innerHTML=`<div class="hd" style="display:flex;justify-content:flex-end;margin:-6px -4px -10px 0"><button class="xbtn" data-close="setPop" aria-label="Einstellungen schließen">×</button></div>`+SET[k]();
+  if(k==='ort'){const upd=()=>{S.place=$('#o1').value||'Standort';S.lat=parseFloat($('#o2').value)||0;S.lon=parseFloat($('#o3').value)||0;drawAlt()};['#o1','#o2','#o3'].forEach(s=>$(s).addEventListener('input',upd))}
+  if(k==='upd'){$('#chkUpd').addEventListener('click',()=>{$('#updRes').innerHTML='<span class="note">Prüfe …</span>';
+    setTimeout(()=>{$('#updRes').innerHTML='<p>Solux 1.0.1 ist verfügbar.<br><span class="note">Korrigiert Seeing-Schätzung bei Föhn.</span></p><button class="pbtn" id="instUpd" style="margin-top:8px">Installieren und neu starten</button>';
+      $('#instUpd').addEventListener('click',()=>{$('#setPop').hidden=true;toast('Solux wird beendet, aktualisiert und neu gestartet …');setTimeout(()=>splash(),900)})},900)})}
+}
+$('#gearBtn').addEventListener('click',()=>{showSet('allg');$('#setPop').hidden=false});
+$('#setNav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)showSet(b.dataset.s)});
+$('#widget').addEventListener('click',e=>{const c=e.target.closest('[data-close]');if(c)$('#'+c.dataset.close).hidden=true});
+$('#quitBtn').addEventListener('click',()=>toast('In der App beendet × Solux. Hier im Prototyp bleibt das Widget sichtbar.'));
+
+/* ---------- Toast ---------- */
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,3200)}
+
+/* ---------- Splash ---------- */
+drawHalpha($('#splashCv'));drawHalpha($('#splashCv2'));
+document.fonts&&document.fonts.ready.then(()=>{drawHalpha($('#splashCv'));drawHalpha($('#splashCv2'));drawWhiteLight($('#sunCv'),{labels:'short'})});
+function splash(){const s=$('#splash');s.classList.remove('hide');s.hidden=false;setTimeout(()=>s.classList.add('hide'),2200)}
+splash();
+$('#replaySplash').addEventListener('click',splash);
+
+/* ---------- Verschieben ---------- */
+(()=>{const w=$('#widget'),desk=$('#desk');let sx,sy,ox,oy,drag=false;
+  const start=e=>{if(window.innerWidth<=900)return;if(e.target.closest('button,input,select,.pop'))return;
+    const r=w.getBoundingClientRect(),edge=8,inEdge=e.clientX-r.left<edge||r.right-e.clientX<edge||e.clientY-r.top<edge||r.bottom-e.clientY<edge;
+    if(!inEdge&&!e.target.closest('#dragBar'))return;drag=true;sx=e.clientX;sy=e.clientY;ox=w.offsetLeft;oy=w.offsetTop;w.setPointerCapture(e.pointerId)};
+  w.addEventListener('pointerdown',start);
+  w.addEventListener('pointermove',e=>{if(!drag)return;const maxX=desk.clientWidth-w.offsetWidth-6,maxY=desk.clientHeight-w.offsetHeight-6;
+    w.style.left=Math.max(6,Math.min(maxX,ox+e.clientX-sx))+'px';w.style.top=Math.max(32,Math.min(maxY,oy+e.clientY-sy))+'px'});
+  w.addEventListener('pointerup',()=>drag=false);
+})();
+
+/* ================= Aufnahmen ================= */
+const resCv=$('#resCv'),ovCv=$('#ovCv'),logPre=$('#logPre');
+let src=null,srcName='beispiel_aufnahme_1042.jpg',srcTime=new Date(Date.UTC(2026,10,13,10,42,17)),disc=null,run=0;
+const ROT=-23.4,FLIP=true;
+
+function openRec(){$('#recWin').hidden=false;$('#tabRec').classList.add('on');$('#tabSun').classList.remove('on')}
+function closeRec(){$('#recWin').hidden=true;$('#tabRec').classList.remove('on');$('#tabSun').classList.add('on')}
+$('#tabRec').addEventListener('click',openRec);$('#openRec2').addEventListener('click',openRec);$('#recClose').addEventListener('click',closeRec);$('#tabSun').addEventListener('click',closeRec);
+
+function makeSample(){const c=document.createElement('canvas');c.width=c.height=900;drawWhiteLight(c,{rot:ROT,flip:FLIP,labels:false,seed:11});
+  const x=c.getContext('2d'),r=rng(3),id=x.getImageData(0,0,900,900),d=id.data;for(let i=0;i<d.length;i+=4){const n=(r()-.5)*14;d[i]+=n;d[i+1]+=n;d[i+2]+=n}x.putImageData(id,0,0);return c}
+
+function detectDisc(img){const N=400,c=document.createElement('canvas');const sc=N/Math.max(img.width,img.height);c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+  const x=c.getContext('2d');x.drawImage(img,0,0,c.width,c.height);const d=x.getImageData(0,0,c.width,c.height).data;let mx=0;
+  for(let i=0;i<d.length;i+=4){const l=.3*d[i]+.59*d[i+1]+.11*d[i+2];if(l>mx)mx=l}
+  let n=0,sx=0,sy=0;for(let y=0;y<c.height;y++)for(let xx=0;xx<c.width;xx++){const i=(y*c.width+xx)*4,l=.3*d[i]+.59*d[i+1]+.11*d[i+2];if(l>mx*.22){n++;sx+=xx;sy+=y}}
+  const r=Math.sqrt(n/Math.PI);return{cx:sx/n/sc,cy:sy/n/sc,r:r/sc,w:img.width,h:img.height}}
+
+function renderResult(aligned){
+  const legend=$('#legendChk').checked&&aligned,S0=900,iw=src.width,ih=src.height;
+  const k=Math.min(1,(S0)/Math.max(iw,ih));const ww=Math.round(iw*k),hh=Math.round(ih*k),lw=legend?Math.round(Math.max(ww,hh)*.42):0;
+  resCv.width=ww+lw;resCv.height=hh;ovCv.width=resCv.width;ovCv.height=resCv.height;
+  const x=resCv.getContext('2d');x.fillStyle='#000';x.fillRect(0,0,resCv.width,hh);
+  x.save();if(aligned){x.translate(disc.cx*k,disc.cy*k);if(FLIP)x.scale(-1,1);x.rotate(-ROT*D2R);x.translate(-disc.cx*k,-disc.cy*k)}x.drawImage(src,0,0,ww,hh);x.restore();
+  if(aligned){const cx=disc.cx*k,cy=disc.cy*k,R=disc.r*k,fs=Math.max(11,Math.round(R*.055));
+    x.strokeStyle='rgba(243,181,68,.18)';x.lineWidth=1;for(const lat of [-30,0,30]){const yy=cy-sin(lat)*R;const half=cos(lat)*R;x.beginPath();x.moveTo(cx-half,yy);x.lineTo(cx+half,yy);x.stroke()}
+    x.beginPath();x.moveTo(cx,cy-R);x.lineTo(cx,cy+R);x.stroke();
+    x.font=`500 ${fs}px "JetBrains Mono",monospace`;x.textBaseline='middle';
+    x.textAlign='center';for(const g of REGIONS){const px=cx+(g.x+.05)*R,py=cy-g.y*R,lx=cx+(g.x+.05+g.lab[0])*R,ly=cy-(g.y+g.lab[1])*R,up=ly<py,t=`AR ${g.ar} ${g.mc}`;
+      x.strokeStyle='rgba(243,181,68,.9)';x.beginPath();x.moveTo(px+(lx-px)*.3,py+(ly-py)*.3);x.lineTo(lx,ly+(up?fs*.8:-fs*.8));x.stroke();x.fillStyle='#f3b544';x.fillText(t,lx,ly)}x.textAlign='start';
+    x.fillStyle='#8e8a83';x.font=`500 ${Math.round(fs*.9)}px "JetBrains Mono",monospace`;x.fillText('N',cx-fs*.3,cy-R-fs);x.fillText('O',cx-R-fs*1.4,cy);
+    x.fillText(`${srcTime.toISOString().slice(0,16).replace('T',' ')} UTC`,12,hh-fs);
+    if(legend){const L=ww+20;x.fillStyle='#0b0b0c';x.fillRect(ww,0,lw,hh);x.fillStyle='#ece8e1';x.font=`700 ${Math.round(fs*1.2)}px Manrope,sans-serif`;x.fillText('Solux · Weißlicht',L,30);
+      x.font=`400 ${Math.round(fs*.85)}px "JetBrains Mono",monospace`;x.fillStyle='#8e8a83';let y=60;
+      for(const ln of legendLines()){x.fillStyle=ln.startsWith('AR')?'#f3b544':'#b9b5ad';x.fillText(ln,L,y);y+=fs*1.25;if(y>hh-10)break}}}
+}
+function legendLines(){const e=ephem(srcTime);return[`${srcTime.toISOString().slice(0,10)} ${srcTime.toISOString().slice(11,19)} UTC`,`P ${e.P.toFixed(1)}°  B0 ${e.B0.toFixed(2)}°`,`Drehung ${(-ROT).toFixed(1)}°${FLIP?' · gespiegelt':''}`,'',
+  ...REGIONS.flatMap(r=>[`AR ${r.ar}  ${r.mc}  ${r.mw}`,`  ${r.loc} · ${r.area} MH · ${r.nn} Fl.`]),'','Quellen: NOAA SWPC, NASA SDO']}
+function textFile(){const e=ephem(srcTime);return `Solux · Auswertung
+Datei:      ${srcName}
+Aufnahme:   ${srcTime.toISOString().replace('T',' ').slice(0,19)} UTC
+Standort:   ${S.place}  ${S.lat.toFixed(2)}°N ${S.lon.toFixed(2)}°E
+Sonne:      P ${e.P.toFixed(2)}°  B0 ${e.B0.toFixed(2)}°  r = ${disc?disc.r.toFixed(1):'–'} px
+Ausrichtung: Norden oben, Osten links · Drehung ${(-ROT).toFixed(1)}° · ${FLIP?'gespiegelt (Zenitspiegel)':'nicht gespiegelt'}
+
+${REGIONS.map(r=>`AR ${r.ar}  ${r.mc.padEnd(4)} ${r.mw.padEnd(4)} ${r.loc}  ${String(r.area).padStart(4)} MH  ${String(r.nn).padStart(2)} Flecken
+   ${Z[r.mc[0]]}; Penumbra ${P[r.mc[1]]}; ${Cc[r.mc[2]].split(':')[0]}.`).join('\n')}
+
+Sonnenfleckenrelativzahl (SWPC): 142
+Quellen: NOAA SWPC SRS ${srcTime.toISOString().slice(0,10)}, NASA SDO/HMI (Abgleich)`}
+
+/* Prozessprotokoll mit Animation */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let anim=null;
+function overlay(mode,p=0){const x=ovCv.getContext('2d'),k=Math.min(1,900/Math.max(src.width,src.height));x.clearRect(0,0,ovCv.width,ovCv.height);if(!mode||!disc)return;
+  const cx=disc.cx*k,cy=disc.cy*k,R=disc.r*k;x.lineWidth=2;
+  if(mode==='limb'){x.strokeStyle='rgba(61,187,108,.9)';x.setLineDash([6,6]);x.beginPath();x.arc(cx,cy,R*(1.25-.25*p),0,7);x.stroke();x.setLineDash([]);
+    x.strokeStyle='rgba(61,187,108,.5)';x.beginPath();x.moveTo(cx-10,cy);x.lineTo(cx+10,cy);x.moveTo(cx,cy-10);x.lineTo(cx,cy+10);x.stroke()}
+  if(mode==='rot'){const a=p*Math.PI*2;x.strokeStyle='rgba(243,181,68,.9)';x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+Math.cos(a)*R,cy+Math.sin(a)*R);x.stroke();
+    x.strokeStyle='rgba(243,181,68,.25)';x.beginPath();x.arc(cx,cy,R,0,7);x.stroke()}
+  if(mode==='spots'){x.strokeStyle='rgba(243,181,68,.9)';for(const g of REGIONS.slice(0,Math.ceil(p*REGIONS.length))){const q=rotPt(g.x+.06,g.y,ROT,FLIP);x.strokeRect(cx+q[0]*R-R*.12,cy-q[1]*R-R*.08,R*.24,R*.16)}}
+}
+function animate(mode,ms){return new Promise(res=>{const t0=performance.now();const f=t=>{const p=Math.min(1,(t-t0)/ms);overlay(mode,p);if(p<1)anim=requestAnimationFrame(f);else res()};anim=requestAnimationFrame(f)})}
+
+async function process(fast=false){
+  const my=++run;cancelAnimationFrame(anim);logPre.innerHTML='';const W=fast?0:1;
+  const t0=Date.now();const ts=()=>`<span class="ts">${new Date().toLocaleTimeString('de-DE')}.${String(Date.now()%1000).padStart(3,'0')}</span>`;
+  const line=(s,cls='')=>{if(my!==run)throw 0;logPre.insertAdjacentHTML('beforeend',`${ts()}  ${cls?`<span class="${cls}">`:''}${s}${cls?'</span>':''}\n`);logPre.scrollTop=logPre.scrollHeight};
+  try{
+    renderResult(false);$('#txtOut').textContent='Auswertung läuft …';
+    line(`▸ Datei geladen  ${srcName}  ${src.width}×${src.height} px`);await sleep(350*W);
+    line(`▸ EXIF  DateTimeOriginal → ${srcTime.toISOString().replace('T',' ').slice(0,19)} UTC`);await sleep(350*W);
+    line('▸ Sonnenrand suchen: Schwelle 22 % · Flächen-Fit');disc=detectDisc(src);if(!fast)await animate('limb',900);
+    line(`  ✓ Mittelpunkt (${disc.cx.toFixed(1)}, ${disc.cy.toFixed(1)})  r = ${disc.r.toFixed(1)} px`,'ok');
+    const e=ephem(srcTime);line(`▸ Ephemeriden  P = ${e.P.toFixed(2)}°  B0 = ${e.B0.toFixed(2)}°`,'hi');await sleep(300*W);
+    line('▸ Referenz laden  SDO/HMI Kontinuum, nächstes Bild 10:42:00 UTC');await sleep(500*W);
+    line('▸ Randverdunkelung entfernen, Flecken maskieren');await sleep(400*W);
+    line('▸ Kreuzkorrelation 0–360° · Schritt 0,5°');
+    const bar=document.createElement('span');bar.className='bar';logPre.appendChild(bar);logPre.appendChild(document.createTextNode('\n'));
+    if(!fast){const pr=animate('rot',1600);for(let i=0;i<=20;i++){bar.textContent=`  [${'█'.repeat(i)}${'░'.repeat(20-i)}] ${i*5} %`;await sleep(80);if(my!==run)throw 0}await pr}else bar.textContent=`  [${'█'.repeat(20)}] 100 %`;
+    line(`  ✓ Drehung ${(-ROT).toFixed(1)}°  Korrelation 0,93 · Spiegelung erkannt`,'ok');
+    line('▸ NOAA SRS abgleichen  4 Regionen im Bildfeld');if(!fast)await animate('spots',900);
+    REGIONS.forEach(r=>line(`  • AR ${r.ar}  ${r.mc}  ${r.mw}  ${r.loc}`));
+    line('▸ Ausrichten (N oben, O links) und beschriften');overlay(null);renderResult(true);await sleep(300*W);
+    line('▸ Legende und Textdatei erzeugt');$('#txtOut').textContent=textFile();
+    line(`✓ Fertig in ${((Date.now()-t0)/1000).toFixed(1)} s`,'ok');logPre.insertAdjacentHTML('beforeend','<span class="cursor"></span>');
+  }catch(err){if(err!==0)console.error(err)}
+}
+
+function loadImg(file){const url=URL.createObjectURL(file),im=new Image();im.onload=()=>{src=im;srcName=file.name;srcTime=new Date(file.lastModified||Date.now());process()};im.src=url}
+const drop=$('#drop');
+['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f&&f.type.startsWith('image/'))loadImg(f);else toast('Bitte eine Bilddatei ablegen (JPEG, PNG, TIFF).')});
+$('#fileIn').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadImg(f)});
+$('#rerun').addEventListener('click',()=>process());
+$('#legendChk').addEventListener('change',()=>{if(disc)renderResult(true)});
+$('#saveBtn').addEventListener('click',()=>toast(`In der App: ${srcName.replace(/\.\w+$/,'')}_solux.jpg${$('#legendChk').checked?' mit Legende':''} + .txt → ${$('#saveDir').value}. Im Prototyp deaktiviert.`));
+
+src=makeSample();process(true);
+})();
+</script>
