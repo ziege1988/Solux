@@ -16,8 +16,11 @@
     setKindButtons();
     tick(); setInterval(tick, 1000);
     drawAltitude(); setInterval(drawAltitude, 60000);
-    loadSun(); setInterval(loadSun, 15 * 60000);
-    loadWeather(); setInterval(loadWeather, 15 * 60000);
+    loadSun(); loadWeather();
+    // Sonnenbild und Wetter im eingestellten Takt erneuern; nach Ruhezustand/Hintergrund sofort nachholen
+    setInterval(refreshDue, 60000);
+    document.addEventListener('visibilitychange', refreshDue);
+    window.addEventListener('focus', refreshDue);
     loadNews();
     api.on('data-updated', async () => { state.cfg = await api.getConfig(); loadNews(); loadRegions(); drawAltitude(); loadWeather(); });
     api.on('show-settings', (sec) => openSettings(sec || 'allg'));
@@ -51,7 +54,17 @@
   });
 
   let sunReq = 0;
+  let lastSun = 0, lastWx = 0;
+  const refreshEvery = () => Math.max(WEB ? 15 : 10, (state.cfg && state.cfg.data && state.cfg.data.refreshMinutes) || 15) * 60000;
+  function refreshDue() {
+    if (document.visibilityState === 'hidden') return;
+    const now = Date.now(), ev = refreshEvery();
+    if (now - lastSun >= ev) loadSun();
+    if (now - lastWx >= ev) loadWeather();
+  }
+
   async function loadSun() {
+    lastSun = Date.now();
     const my = ++sunReq;
     $('#sunLoad').hidden = false; $('#sunLoad').textContent = 'Lade Sonnenbild …';
     try {
@@ -266,6 +279,7 @@
 
   /* ---------------- Wetter / Seeing / Wind ---------------- */
   async function loadWeather() {
+    lastWx = Date.now();
     try {
       state.weather = await api.weather();
       renderStatus();
