@@ -13,8 +13,8 @@
  *  2. Freie Atmosphäre: Windscherung zwischen 850 und 500 hPa.
  *  3. Jetstream: Wind auf 250/200 hPa.
  * Die Koeffizienten sind empirisch so gewählt, dass typische Werte herauskommen
- * (Sommermittag über Pflaster 3,5–4″, tiefe Wintersonne 2,5–3″). Über Bewertungen
- * des Nutzers wird ein persönlicher Kalibrierfaktor gelernt.
+ * (Sommermittag über Pflaster 3,5–4″, tiefe Wintersonne 2,5–3″). Aus der Randschärfe eigener
+ * Weißlicht-Aufnahmen wird automatisch ein persönlicher Kalibrierfaktor gelernt.
  */
 (function (root) {
   'use strict';
@@ -79,12 +79,31 @@
   /** Nutzerbewertung 1 (sehr ruhig) … 5 (sehr unruhig) in Bogensekunden. */
   const RATING_ARCSEC = { 1: 1.2, 2: 1.8, 3: 2.6, 4: 3.5, 5: 4.6 };
 
-  /** Kalibrierfaktor als Median der Verhältnisse Bewertung/Modell (begrenzt). */
-  function calibrationFrom(ratings) {
-    const r = (ratings || []).filter((x) => x.model > 0 && RATING_ARCSEC[x.rating]).map((x) => RATING_ARCSEC[x.rating] / x.model).sort((a, b) => a - b);
-    if (r.length < 2) return 1;
-    const m = r.length % 2 ? r[(r.length - 1) / 2] : (r[r.length / 2 - 1] + r[r.length / 2]) / 2;
-    return Math.min(2, Math.max(0.5, m));
+  const median = (a) => { const s = a.slice().sort((p, q) => p - q); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
+
+  /**
+   * Kalibrierfaktor = Median(gemessen / Modell), begrenzt auf 0,5 … 2.
+   * Bevorzugt Messungen aus eigenen Weißlicht-Aufnahmen (Randschärfe); ältere Handbewertungen 1–5 nur ohne Messungen.
+   */
+  function calibrationInfo(records) {
+    const all = records || [];
+    const meas = all.filter((x) => x.model > 0 && x.measured > 0);
+    let ratios, source;
+    if (meas.length) { ratios = meas.map((x) => x.measured / x.model); source = 'bilder'; }
+    else { ratios = all.filter((x) => x.model > 0 && RATING_ARCSEC[x.rating]).map((x) => RATING_ARCSEC[x.rating] / x.model); source = ratios.length ? 'bewertung' : null; }
+    if (ratios.length < 2) return { factor: 1, n: ratios.length, source, needed: 2 };
+    return { factor: Math.min(2, Math.max(0.5, median(ratios))), n: ratios.length, source };
+  }
+  function calibrationFrom(records) { return calibrationInfo(records).factor; }
+
+  /**
+   * Seeing aus der gemessenen Randschärfe einer Weißlicht-Aufnahme.
+   * fwhmPx: Halbwertsbreite des Randabfalls in Pixeln, arcPerPx: Bildmaßstab.
+   * Die Pixelgröße selbst (≈ 1 px Halbwertsbreite) wird quadratisch abgezogen.
+   */
+  function seeingFromLimb(fwhmPx, arcPerPx) {
+    if (!(fwhmPx > 0) || !(arcPerPx > 0)) return null;
+    return Math.sqrt(Math.max(0.25, fwhmPx * fwhmPx - 1)) * arcPerPx;
   }
 
   /** Bestes zusammenhängendes Beobachtungsfenster des Tages. */
@@ -100,6 +119,6 @@
     return { from: hours[s].time, to: new Date(hours[e].time.getTime() + 3600000), seeing: best.seeing };
   }
 
-  const api = { SURFACES, estimate, rating, r0cm, RATING_ARCSEC, calibrationFrom, bestWindow };
+  const api = { SURFACES, estimate, rating, r0cm, RATING_ARCSEC, calibrationFrom, calibrationInfo, seeingFromLimb, bestWindow };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SoluxSeeing = api;
 })(typeof self !== 'undefined' ? self : this);

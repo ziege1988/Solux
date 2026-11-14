@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('solux', {
   news: inv('data:news'),
   weather: inv('data:weather'),
   rateSeeing: inv('data:rateSeeing'),
+  seeing: { record: inv('seeing:record'), info: inv('seeing:info'), reset: inv('seeing:reset') },
+  diary: { add: inv('diary:add'), list: inv('diary:list'), image: inv('diary:image'), remove: inv('diary:remove'), note: inv('diary:note'), info: inv('diary:info') },
   storeInfo: inv('data:storeInfo'),
   clearImages: inv('data:clearImages'),
   geoSearch: inv('geo:search'),

@@ -51,8 +51,32 @@ beschriftet und mit Legende und Textdatei gespeichert.
   - Höhenlineale Ost–West, wahlweise **außen** oder **durchgehend** über die Scheibe
   - Maßstab aus dem gemessenen Sonnenradius (≙ 696.000 km)
   - Reicht das Bild nicht aus, wird der Himmel mit passender Farbe und Körnung unauffällig erweitert.
-- **Export-Dialog:** Text, Skala, Beschriftung, Gradnetz, Flares des Tages, **JPEG** (90/95/100) oder
+- **Export-Dialog:** Text, Skala, Beschriftung, Gradnetz, Flares des Tages, Protuberanzen, **JPEG** (90/95/100) oder
   **TIFF** (verlustfrei), Textdatei ja oder nein. Vorschau von Dateiname, Größe und Ordner.
+- **H-Alpha** (neu in 1.5): Abgleich mit dem GONG-H-Alpha-Bild zur Aufnahmezeit (Filamente und Plages).
+  Die Wellenlänge erkennt Solux so:
+  - am Dateinamen: `ha`, `halpha`, `h-alpha`, `656`
+  - an der Bildfarbe, wenn blau oder violett: Kalzium
+  - an einem negativ bearbeiteten, weißen Himmel: H-Alpha
+  - bei orangen Bildern durch Abgleich mit beiden Referenzen (Weißlicht/H-Alpha)
+
+  Die **Protuberanzen** werden automatisch gemessen. Pro Protuberanz gibt Solux an:
+  - die Höhe über dem Rand in km (projiziert, also eine Mindesthöhe)
+  - die Breite
+  - den Positionswinkel von Sonnennord über Ost
+  - die heliografische Breite
+
+  Im Bild sind sie markiert, in Legende und Textdatei aufgeführt.
+- **Bildschärfe:** Solux misst die Breite des Randabfalls in Bogensekunden. Bei Weißlicht kalibriert das automatisch das
+  Seeing-Modell (siehe unten).
+- **Beobachtungstagebuch** (Knopf „Tagebuch“): Jede ausgewertete Aufnahme wird automatisch mit diesen Angaben gespeichert:
+  - Vorschau und ausgerichtete Fassung
+  - Regionen und Protuberanzen
+  - Bildschärfe
+  - Notiz
+
+  Filter nach Wellenlänge. **Region verfolgen** spielt die Entwicklung einer Gruppe über mehrere Tage als
+  Animation ab, mit Tabelle aus Klasse, Fläche und Fleckenzahl. Ablage: `~/Library/Application Support/Solux/diary`.
 
 ## Solux mobil (iPhone)
 
@@ -62,7 +86,7 @@ Die Hauptseite „Sonne“ gibt es zusätzlich als Web-App fürs Handy, ohne Auf
 - Gleicher Code wie das Mac-Widget (`src/shared`, `src/renderer/widget.*`), eigene Datenanbindung im
   Browser (`web/api-web.js`)
 - Daten direkt von NOAA SWPC, Open-Meteo und Helioviewer, ohne eigenen Server
-- Standort und Seeing-Bewertungen bleiben auf dem Handy (lokaler Speicher)
+- Standort und Einstellungen bleiben auf dem Handy (lokaler Speicher)
 - Wird bei jeder Änderung automatisch über GitHub Pages veröffentlicht
   (`.github/workflows/pages.yml`)
 
@@ -73,7 +97,7 @@ Lokal testen: `node scripts/build-web.js`, dann `dist-web/` mit einem beliebigen
 
 ## Push-Mitteilungen
 
-Drei Stufen, am Mac unter Zahnrad → Hinweise, am iPhone unter Zahnrad → Mitteilungen:
+Drei Stufen, am Mac und am iPhone unter Zahnrad → Mitteilungen:
 
 - **Nur interessante Meldungen** (Standard):
   - X-Flares und M-Flares ab M5
@@ -89,7 +113,8 @@ Regeln:
 
 **Mac:** Solux meldet sich direkt, solange die App läuft.
 
-**iPhone:** Der Workflow `.github/workflows/push.yml` prüft alle 15 Minuten und sendet Web-Push. Die Mitteilung kommt
+**iPhone:** Der Workflow `.github/workflows/push.yml` prüft und sendet Web-Push. Den 15-Minuten-Takt übernimmt
+**cron-job.org**, weil GitHubs eigener Zeitplan unzuverlässig ist. Die Einrichtung steht in [docs/PUSH-TAKT.md](docs/PUSH-TAKT.md). Die Mitteilung kommt
 auch, wenn Solux mobil geschlossen ist, denn die App muss dafür nicht laufen.
 
 Einrichtung (einmalig):
@@ -103,8 +128,8 @@ Einrichtung (einmalig):
 5. Test: GitHub → Reiter **Actions** → links **„Solux Push“** → rechts **„Run workflow“** → grüner Knopf
    **Run workflow**. Die Testmitteilung kommt nach etwa einer Minute.
 
-Hinweis: GitHub startet zeitgesteuerte Workflows mit einigen Minuten Verzögerung und pausiert sie, wenn
-das Repository 60 Tage lang nicht verändert wurde (dann einmal manuell starten).
+Hinweis: GitHubs eigener Zeitplan läuft nur noch stündlich als Reserve. Er startet oft mit großer Verzögerung und
+pausiert, wenn das Repository 60 Tage lang nicht verändert wurde. Der Takt über cron-job.org ist davon nicht betroffen.
 
 ## Datenquellen
 
@@ -131,8 +156,17 @@ Für Tages-Seeing gibt es keinen offenen Dienst. Solux schätzt es deshalb aus O
 
 Die Beiträge werden physikalisch korrekt kombiniert: ε = (Σ εᵢ^5/3)^3/5 · (sec z)^3/5.
 
-Die Werte sind am Anfang eine **Tendenz**. Mit der Bewertung 1 bis 5 im Seeing-Fenster lernt Solux einen
-Kalibrierfaktor für deinen Hof.
+Die Werte sind am Anfang eine **Tendenz**. Ab 1.5 kalibriert Solux sich **automatisch aus deinen Weißlicht-Aufnahmen**.
+1. Solux misst die Randschärfe der Aufnahme.
+2. Solux berechnet das Modell-Seeing zur Aufnahmezeit, mit den Open-Meteo-Stundenwerten des Tages (ältere Tage aus dem Vorhersage-Archiv).
+3. Der Median aller Verhältnisse gemessen/Modell wird ab 2 Aufnahmen der Kalibrierfaktor (0,5–2).
+
+Einschränkungen:
+- Die Messung enthält auch die Optik und die Bildbearbeitung (Schärfung). Das Modell wird also auf die Schärfe
+  *deiner* Bilder kalibriert, nicht auf das reine Seeing. Bei gleichbleibendem Arbeitsablauf ist das gewollt.
+- Kalzium und H-Alpha zählen nicht mit: Ihr Rand ist von Natur aus weich (Chromosphäre).
+
+Den Faktor zeigt Zahnrad → Über Solux an. Für das iPhone lässt er sich dort von Hand übernehmen.
 
 ## Installation
 
@@ -164,9 +198,8 @@ npm run dist         # App bauen -> dist/Solux-mac-arm64.dmg / Solux-mac-x64.dmg
    eintragen. Voreingestellt ist Unterleichtersbach mit 50,28° N / 9,80° E. Das ist nur ein Näherungswert,
    bitte prüfen.
 2. **Montierung:** azimutal (voreingestellt), **Untergrund:** Pflaster (voreingestellt).
-3. **Aufnahmen:**
-   - Kamerazeit wählen (Ortszeit oder UTC)
-   - Zielordner festlegen, das geht auch beim ersten Speichern
+3. **Ausrüstung:** Montierung sowie je Wellenlänge (Weißlicht, Kalzium, H-Alpha) Brennweite inklusive Barlow,
+   Pixelgröße und Binning. Dazu der Zielordner für Exporte, der sich auch beim ersten Export festlegen lässt.
 4. Die **ersten Aufnahmen mit mindestens zwei Fleckengruppen** füllen das Setup-Profil. Solux lernt daraus:
    - ob das Bild gespiegelt ist
    - die Drehrichtung der Bildfeldrotation
@@ -176,7 +209,7 @@ npm run dist         # App bauen -> dist/Solux-mac-arm64.dmg / Solux-mac-x64.dmg
 ## Updates
 
 - Solux prüft automatisch zweimal täglich, ob es ein neueres GitHub-Release gibt. Manuell geht das unter
-  **Zahnrad → Updates → Nach Updates suchen**.
+  **Zahnrad → Über Solux → Nach Updates suchen**.
 - **Installieren und neu starten** lädt das passende Paket und beendet Solux. Danach wird die App ersetzt und
   mit Startbild neu geöffnet.
 

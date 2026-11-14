@@ -137,3 +137,94 @@ test('Push-Regeln: Stufen und einmal täglich', () => {
   assert.strictEqual(SWX.pushMessages(news, regions, 'aus', now).length, 0);
   assert.ok(a.find((m) => m.title.includes('AR 4566')).key.endsWith('2026-11-14'));
 });
+
+/* ---------- 1.5.0: Seeing aus Aufnahmen, H-Alpha, Tagebuch ---------- */
+const AL = require('../src/shared/align');
+const SW15 = require('../src/shared/spaceweather');
+
+/** Künstliche Sonne: Scheibe mit gaußförmig verwaschenem Rand, optional Protuberanz und weißem Himmel. */
+function fakeSun({ w = 600, r = 220, sigma = 1.5, prom = null, inverted = false } = {}) {
+  const g = new Float32Array(w * w), c = w / 2;
+  const erf = (x) => { const t = 1 / (1 + 0.3275911 * Math.abs(x)); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+  for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+    const d = Math.hypot(x - c, y - c);
+    let v = 20 + 180 * 0.5 * (1 - erf((d - r) / (Math.SQRT2 * sigma)));
+    if (prom) { const a = Math.atan2(y - c, x - c), da = Math.abs(((a - prom.angle + Math.PI) % (2 * Math.PI)) - Math.PI); if (d > r && d < r * (1 + prom.h) && da < prom.width / 2) v += 60; }
+    g[y * w + x] = inverted ? (d > r ? 255 - (v - 20) : v) : v;
+  }
+  return { g, w, h: w, disc: { cx: c, cy: c, r } };
+}
+
+test('Randschärfe: gemessene Halbwertsbreite entspricht der Unschärfe', () => {
+  const s = fakeSun({ sigma: 2 });
+  const m = AL.limbSharpness(s.g, s.w, s.h, s.disc);
+  assert.ok(m.n > 300);
+  assert.ok(Math.abs(m.fwhmPx - 2.355 * 2) < 0.5, `FWHM ${m.fwhmPx}`);
+  const see = S.seeingFromLimb(m.fwhmPx, 1.0);
+  assert.ok(see > 4 && see < 5, `Seeing ${see}`);
+});
+
+test('Protuberanz wird gefunden und ihre Höhe gemessen', () => {
+  const s = fakeSun({ prom: { angle: 0.8, h: 0.08, width: 0.12 } });
+  const p = AL.measureProminences(s.g, s.w, s.h, s.disc);
+  assert.ok(p.list.length >= 1);
+  const top = p.list[0];
+  assert.ok(Math.abs(top.angle - 0.8) < 0.05, `Winkel ${top.angle}`);
+  assert.ok(Math.abs(top.height - 0.08) < 0.015, `Höhe ${top.height}`);
+});
+
+test('Negativ bearbeiteter Himmel wird erkannt', () => {
+  const s = fakeSun({ inverted: true });
+  const sky = AL.skyInfo(s.g, s.w, s.h);
+  assert.ok(sky.inverted);
+  const n = AL.normalizeSky(s.g, sky.sky), cls = AL.classifyImage(n, s.w, s.h);
+  assert.strictEqual(cls.type, 'full');
+  assert.ok(Math.abs(cls.disc.r - 220) < 2);
+  assert.ok(!AL.skyInfo(fakeSun().g, 600, 600).inverted);
+});
+
+test('Kalibrierfaktor aus Messungen (bevorzugt vor Handbewertungen)', () => {
+  assert.strictEqual(S.calibrationInfo([]).factor, 1);
+  const recs = [{ model: 2, measured: 2.4 }, { model: 3, measured: 3.6 }, { model: 2.5, measured: 3 }, { model: 2, rating: 5 }];
+  const ci = S.calibrationInfo(recs);
+  assert.strictEqual(ci.source, 'bilder'); assert.strictEqual(ci.n, 3);
+  assert.ok(Math.abs(ci.factor - 1.2) < 1e-9);
+  assert.strictEqual(S.calibrationInfo([{ model: 2, measured: 2.4 }]).factor, 1); // erst ab 2 Aufnahmen
+});
+
+test('Modell-Seeing zur Aufnahmezeit aus Stundenwerten', () => {
+  const H = { time: [], temperature_2m: [], soil_temperature_0cm: [], shortwave_radiation: [], wind_speed_10m: [], wind_gusts_10m: [], wind_speed_850hPa: [], wind_speed_500hPa: [], wind_speed_250hPa: [], wind_speed_200hPa: [] };
+  for (let h = 0; h < 24; h++) { H.time.push(`2026-06-21T${String(h).padStart(2, '0')}:00`); H.temperature_2m.push(22); H.soil_temperature_0cm.push(30); H.shortwave_radiation.push(h > 5 && h < 19 ? 700 : 0); H.wind_speed_10m.push(2); H.wind_gusts_10m.push(4); H.wind_speed_850hPa.push(6); H.wind_speed_500hPa.push(15); H.wind_speed_250hPa.push(25); H.wind_speed_200hPa.push(22); }
+  const loc = { lat: 50.28, lon: 9.8, surface: 'pflaster' };
+  const v = SW15.modelSeeingAt({ hourly: H }, loc, '2026-06-21T11:20:00Z');
+  assert.ok(v > 1.5 && v < 6, `Seeing ${v}`);
+  assert.strictEqual(SW15.modelSeeingAt({ hourly: H }, loc, '2026-06-21T23:30:00Z'), null); // Nacht
+  assert.match(SW15.weatherDayUrl(loc, '2020-05-01T10:00:00Z'), /historical-forecast-api/);
+});
+
+test('Tagebuch: anlegen, ersetzen, Notiz, löschen', () => {
+  const { Diary } = require('../src/main/diary');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'solux-diary-'));
+  const d = new Diary(dir);
+  const e = { file: 'a.jpg', time: '2026-11-14T10:00:00.000Z', mode: 'wl', regions: [{ region: 4321 }] };
+  const id = d.add(e, new Uint8Array([1, 2]), new Uint8Array([3]));
+  assert.strictEqual(d.add({ ...e, sharp: 2.5 }, null, null), id);
+  assert.strictEqual(d.list().length, 1);
+  assert.strictEqual(d.list()[0].sharp, 2.5);
+  assert.ok(d.list()[0].thumb.startsWith('data:image/jpeg'));
+  d.note(id, 'ruhig');
+  assert.strictEqual(new Diary(dir).load()[0].note, 'ruhig');
+  d.remove(id);
+  assert.strictEqual(d.list().length, 0);
+});
+
+test('Einstellungen: alte gemeinsame Optik wird je Profil übernommen', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'solux-cfg-'));
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ recordings: { optics: { focal: 2400, pixel: 2.9, binning: 1 }, jpegQuality: 90 } }));
+  const { Config } = require('../src/main/config');
+  const c = new Config(dir).get();
+  assert.strictEqual(c.profiles.wl.optics.focal, 2400);
+  assert.strictEqual(c.profiles.ha.optics.pixel, 2.9);
+  assert.strictEqual(c.recordings.optics, undefined);
+  assert.strictEqual(c.recordings.jpegQuality, undefined);
+});

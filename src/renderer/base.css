@@ -54,3 +54,5 @@ p { margin: 0; }
 ::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 4px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 input[type=range] { accent-color: var(--sun); }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.lnk { color: var(--sun); font-size: inherit; padding: 0 2px; text-decoration: underline; text-underline-offset: 2px; background: none; border: 0; cursor: pointer; }

@@ -10,6 +10,7 @@ const path = require('path');
 const { Config } = require('./config');
 const { DataStore, setFetch: setDataFetch } = require('./data');
 const updater = require('./updater');
+const { Diary } = require('./diary');
 const astro = require('../shared/astro');
 const SW = require('../shared/spaceweather');
 
@@ -17,7 +18,7 @@ const R = (...p) => path.join(__dirname, '..', ...p);
 const BUILD = path.join(__dirname, '..', '..', 'build');
 const WIDGET_W = 420, WIDGET_H = 820;
 
-let config, store, tray = null;
+let config, store, diary, tray = null;
 let widgetWin = null, splashWin = null, recWin = null;
 let refreshTimer = null, pendingUpdate = null;
 const isMac = process.platform === 'darwin';
@@ -112,7 +113,7 @@ function buildTrayMenu() {
     { label: 'Aufnahmen …', click: openRecordings },
     { label: 'Einstellungen …', click: () => { toggleWidget(true); widgetWin.webContents.send('show-settings'); } },
     { type: 'separator' },
-    { label: pendingUpdate ? `Update ${pendingUpdate.latest} installieren` : 'Nach Updates suchen …', click: () => { toggleWidget(true); widgetWin.webContents.send('show-settings', 'upd'); } },
+    { label: pendingUpdate ? `Update ${pendingUpdate.latest} installieren` : 'Nach Updates suchen …', click: () => { toggleWidget(true); widgetWin.webContents.send('show-settings', 'about'); } },
     { type: 'separator' },
     { label: 'Solux beenden', click: () => app.quit() },
   ]));
@@ -240,6 +241,15 @@ function registerIpc() {
   ipcMain.handle('data:news', () => store.news(config.get()));
   ipcMain.handle('data:weather', () => store.weather(config.get()));
   ipcMain.handle('data:rateSeeing', (_e, rating, model) => store.addRating(rating, model));
+  ipcMain.handle('seeing:record', async (_e, rec) => { const r = await store.seeingRecord(config.get(), rec); notifyAll('data-updated'); return r; });
+  ipcMain.handle('seeing:info', () => store.seeingInfo());
+  ipcMain.handle('seeing:reset', () => { const r = store.seeingReset(); notifyAll('data-updated'); return r; });
+  ipcMain.handle('diary:add', (_e, entry, thumb, aligned) => diary.add(entry, thumb, aligned));
+  ipcMain.handle('diary:list', () => diary.list());
+  ipcMain.handle('diary:image', (_e, id) => diary.image(id));
+  ipcMain.handle('diary:remove', (_e, id) => diary.remove(id));
+  ipcMain.handle('diary:note', (_e, id, text) => diary.note(id, text));
+  ipcMain.handle('diary:info', () => diary.info());
   ipcMain.handle('data:storeInfo', () => {
     const dir = store.dir; let bytes = 0;
     const walk = (d) => { for (const f of fs.readdirSync(d)) { const p = path.join(d, f); const s = fs.statSync(p); if (s.isDirectory()) walk(p); else bytes += s.size; } };
@@ -265,8 +275,10 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0];
   });
   ipcMain.handle('rec:load', (_e, file) => loadImageFile(file));
-  ipcMain.handle('rec:chooseFolder', async () => {
-    const r = await dialog.showOpenDialog(recWin, { properties: ['openDirectory', 'createDirectory'], defaultPath: config.get().recordings.folder || app.getPath('pictures') });
+  ipcMain.handle('rec:chooseFolder', async (_e) => {
+    const opts = { properties: ['openDirectory', 'createDirectory'], defaultPath: config.get().recordings.folder || app.getPath('pictures') };
+    const parent = BrowserWindow.fromWebContents(_e.sender);
+    const r = parent ? await dialog.showOpenDialog(parent, opts) : await dialog.showOpenDialog(opts);
     if (r.canceled) return null;
     config.set({ recordings: { folder: r.filePaths[0] } });
     return r.filePaths[0];
@@ -306,7 +318,7 @@ function registerIpc() {
     config.set({ profiles: { [mode]: prof } });
     return prof;
   });
-  ipcMain.handle('rec:profileReset', (_e, mode) => { config.set({ profiles: { [mode]: { flip: null, sigma: 1, history: [] } } }); return config.get().profiles[mode]; });
+  ipcMain.handle('rec:profileReset', (_e, mode) => { config.set({ profiles: { [mode]: { flip: null, sigma: 1, history: [] } } }); notifyAll('data-updated'); return config.get().profiles[mode]; });
 
   ipcMain.handle('update:check', async () => {
     const info = await updater.checkForUpdate(config.get().update.repo, app.getVersion());
@@ -336,9 +348,15 @@ async function devScreenshots(dir) {
   }
   if (process.env.SOLUX_SHOT_REC) {
     openRecordings(); await wait(3000);
-    if (process.env.SOLUX_SHOT_REC !== '1') await recWin.webContents.executeJavaScript(`window.__soluxTestLoad && window.__soluxTestLoad(${JSON.stringify(process.env.SOLUX_SHOT_REC)}, ${process.env.SOLUX_SHOT_REC_OPTS || 'null'})`).catch((e) => log('rec ' + e.message));
-    await wait(Number(process.env.SOLUX_SHOT_REC_WAIT || 15000));
-    await shot(recWin, 'recordings');
+    // Mehrere Dateien nacheinander: SOLUX_SHOT_REC='[{"path":"…","opts":{…},"wait":20000}, …]'
+    const seq = process.env.SOLUX_SHOT_REC.startsWith('[') ? JSON.parse(process.env.SOLUX_SHOT_REC) : process.env.SOLUX_SHOT_REC !== '1' ? [{ path: process.env.SOLUX_SHOT_REC, opts: JSON.parse(process.env.SOLUX_SHOT_REC_OPTS || 'null') }] : [];
+    let i = 0;
+    for (const it of seq) {
+      await recWin.webContents.executeJavaScript(`window.__soluxTestLoad && window.__soluxTestLoad(${JSON.stringify(it.path)}, ${JSON.stringify(it.opts || null)})`).catch((e) => log('rec ' + e.message));
+      await wait(Number(it.wait || process.env.SOLUX_SHOT_REC_WAIT || 15000));
+      await shot(recWin, seq.length > 1 ? `recordings_${++i}` : 'recordings');
+    }
+    if (!seq.length) { await wait(Number(process.env.SOLUX_SHOT_REC_WAIT || 15000)); await shot(recWin, 'recordings'); }
     if (process.env.SOLUX_SHOT_REC_JS) { await recWin.webContents.executeJavaScript(process.env.SOLUX_SHOT_REC_JS).catch((e) => log('rec js ' + e.message)); await wait(8000); await shot(recWin, 'recordings2'); }
   }
   app.quit();
@@ -351,6 +369,7 @@ app.whenReady().then(async () => {
   updater.setFetch((...a) => net.fetch(...a));
   config = new Config(userData);
   store = new DataStore(path.join(userData, 'cache'), log);
+  diary = new Diary(path.join(userData, 'diary'));
   if (isMac && app.dock) app.dock.hide();
   buildAppMenu();
   registerIpc();

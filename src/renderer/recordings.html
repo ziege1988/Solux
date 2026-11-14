@@ -10,11 +10,12 @@
 <body>
 <header class="bar">
   <h1>Aufnahmen</h1>
-  <div class="seg" id="modeSeg" role="group" aria-label="Wellenlänge der Aufnahme"><button data-k="wl">Weißlicht</button><button data-k="ca">Kalzium</button></div>
+  <div class="seg" id="modeSeg" role="group" aria-label="Wellenlänge der Aufnahme"><button data-k="wl">Weißlicht</button><button data-k="ca">Kalzium</button><button data-k="ha">H-Alpha</button></div>
   <span class="note" id="profileInfo"></span>
   <span class="spacer"></span>
   <span class="note" id="intakeInfo"></span>
   <button class="ghost" id="intakeBtn" disabled>Einordnung …</button>
+  <button class="ghost" id="diaryBtn">Tagebuch</button>
   <button class="pbtn" id="openBtn">Öffnen …</button>
 </header>
 
@@ -26,7 +27,7 @@
     </div>
     <div class="empty" id="empty">
       <div class="ring"></div>
-      <p><b>Sonnenaufnahme hierher ziehen</b><br><span class="note">JPEG oder TIFF · Weißlicht oder Kalzium</span></p>
+      <p><b>Sonnenaufnahme hierher ziehen</b><br><span class="note">JPEG oder TIFF · Weißlicht, Kalzium oder H-Alpha</span></p>
     </div>
     <div class="manual" id="manual" hidden>
       <span class="lbl">Manuell ausrichten</span>
@@ -55,6 +56,50 @@
   </div>
 </footer>
 
+<section class="diary" id="diary" hidden aria-label="Beobachtungstagebuch">
+  <div class="dhd">
+    <h2>Beobachtungstagebuch</h2>
+    <div class="seg" id="dFilter"><button data-v="all" class="on">Alle</button><button data-v="wl">Weißlicht</button><button data-v="ca">Kalzium</button><button data-v="ha">H-Alpha</button></div>
+    <select id="dTrack" class="inp" aria-label="Region verfolgen"><option value="">Region verfolgen …</option></select>
+    <span class="note" id="dInfo"></span>
+    <span class="spacer"></span>
+    <button class="ghost" id="dClose">Zurück zur Auswertung</button>
+  </div>
+  <div class="dgrid" id="dGrid"></div>
+</section>
+
+<div class="modal" id="dDetail" hidden>
+  <div class="dlg ddetail" role="dialog" aria-labelledby="ddTitle">
+    <div class="ddhd"><h2 id="ddTitle"></h2><span class="spacer"></span><button class="ghost" id="ddClose">Schließen</button></div>
+    <div class="ddbody">
+      <div class="ddimg"><canvas id="ddCv"></canvas></div>
+      <div class="ddside">
+        <div class="kv" id="ddKv"></div>
+        <div id="ddRegions" class="chips"></div>
+        <div id="ddProms" class="note"></div>
+        <label class="lbl" for="ddNote">Notiz</label>
+        <textarea id="ddNote" class="inp" rows="4" placeholder="z. B. Seeing, Wolken, Kamera-Einstellungen …"></textarea>
+        <div class="ddbtns"><button class="ghost" id="ddReveal">Im Finder zeigen</button><button class="ghost" id="ddRerun">Neu auswerten</button><span class="spacer"></span><button class="ghost danger" id="ddDel">Löschen</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="dTrackDlg" hidden>
+  <div class="dlg dtrack" role="dialog" aria-labelledby="tTitle">
+    <div class="ddhd"><h2 id="tTitle"></h2><span class="spacer"></span><button class="ghost" id="tClose">Schließen</button></div>
+    <div class="tbody">
+      <div class="tview"><canvas id="tCv" width="620" height="620"></canvas></div>
+      <div class="tside">
+        <div class="tctl"><button class="pbtn" id="tPlay">▶ Abspielen</button><input type="range" id="tPos" min="0" max="0" value="0" aria-label="Bild"><select id="tSpeed" class="inp" aria-label="Geschwindigkeit"><option value="1400">langsam</option><option value="800" selected>normal</option><option value="400">schnell</option></select></div>
+        <label class="chk"><input type="checkbox" id="tSame" checked> nur gleiche Wellenlänge</label>
+        <div class="ttabw"><table class="ttab" id="tTab"></table></div>
+        <p class="note">Ausschnitt ≈ 300.000 km um die Region, jeweils Norden oben. Klasse und Fläche: NOAA zum Aufnahmetag.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="intake" hidden>
   <form class="dlg intake" id="intakeForm" novalidate aria-labelledby="inTitle">
     <h2 id="inTitle">Aufnahme einordnen</h2>
@@ -67,12 +112,12 @@
     <label class="chk"><input type="checkbox" id="inNoTime"> Uhrzeit unbekannt – 12:00 Ortszeit annehmen (Beschriftung dann etwas ungenauer)</label>
     <p class="note" id="inSrc"></p>
     <div class="row2">
-      <div class="field"><label>Wellenlänge</label><div class="seg" id="inMode"><button type="button" data-k="wl">Weißlicht</button><button type="button" data-k="ca">Kalzium</button></div></div>
+      <div class="field"><label>Wellenlänge</label><div class="seg" id="inMode"><button type="button" data-k="wl">Weißlicht</button><button type="button" data-k="ca">Kalzium</button><button type="button" data-k="ha">H-Alpha</button></div></div>
       <div class="field"><label for="inType">Bildart</label><select id="inType" class="inp">
         <option value="auto">Automatisch erkennen</option><option value="full">Ganze Sonne</option><option value="partial">Ausschnitt mit Sonnenrand</option><option value="surface">Oberfläche ohne Rand (Fleckengruppe)</option></select></div>
     </div>
     <fieldset class="optics">
-      <legend>Bildmaßstab <span class="note">(für Ausschnitte und Oberflächenbilder)</span></legend>
+      <legend>Bildmaßstab <span class="note">(Profil <span id="inOptLbl"></span> · für Ausschnitte und Oberflächenbilder)</span></legend>
       <div class="row3">
         <div class="field"><label for="inFocal">Brennweite mm</label><input type="number" id="inFocal" class="inp" min="50" step="any" placeholder="z. B. 2400"></div>
         <div class="field"><label for="inPixel">Pixelgröße µm</label><input type="number" id="inPixel" class="inp" min="0.5" step="any" placeholder="z. B. 2.9"></div>
@@ -93,7 +138,8 @@
     <div class="grp"><span class="gl">Im Bild</span>
       <label class="chk"><input type="checkbox" id="exLabels"> Regionsbeschriftung (AR + Klasse)</label>
       <label class="chk"><input type="checkbox" id="exGrid"> Heliografisches Gradnetz</label>
-      <label class="chk"><input type="checkbox" id="exFlares"> Flares des Tages markieren</label></div>
+      <label class="chk"><input type="checkbox" id="exFlares"> Flares des Tages markieren</label>
+      <label class="chk" id="exPromsRow"><input type="checkbox" id="exProms"> Protuberanzen mit Höhe markieren</label></div>
     <div class="row2">
       <div class="grp"><span class="gl">Format</span><div class="seg big" id="exFormat"><button type="button" data-v="jpeg">JPEG</button><button type="button" data-v="tiff">TIFF (verlustfrei)</button></div></div>
       <div class="grp" id="exQGrp"><span class="gl">JPEG-Qualität</span><div class="seg big" id="exQ"><button type="button" data-v="90">90</button><button type="button" data-v="95">95</button><button type="button" data-v="100">100</button></div></div>
@@ -116,9 +162,11 @@
 
 <script src="../shared/astro.js"></script>
 <script src="../shared/mcintosh.js"></script>
+<script src="../shared/seeing.js"></script>
 <script src="../shared/align.js"></script>
 <script src="../shared/filedate.js"></script>
 <script src="common.js"></script>
 <script src="recordings.js"></script>
+<script src="recordings-diary.js"></script>
 </body>
 </html>

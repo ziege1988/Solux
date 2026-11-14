@@ -1,16 +1,18 @@
-# Prüft alle 15 Minuten die NOAA-Daten und schickt bei brisanten Ereignissen
-# eine Push-Mitteilung an Solux mobil (iPhone). Einrichtung: siehe README → Push-Mitteilungen.
+# Prüft die NOAA-Daten und schickt bei brisanten Ereignissen eine Push-Mitteilung an Solux mobil.
+# Takt: cron-job.org startet diesen Workflow alle 15 Minuten über die GitHub-API (zuverlässig).
+# Der GitHub-eigene Zeitplan unten ist nur Reserve – GitHub verzögert oder überspringt ihn häufig.
+# Einrichtung: docs/PUSH-TAKT.md
 name: Solux Push
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '7 * * * *'
   workflow_dispatch:
     inputs:
       test:
         description: 'Testmitteilung senden'
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read

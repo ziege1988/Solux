@@ -207,7 +207,7 @@
       for (let k = 0; k < nT; k++) {
         const c = row[k];
         let v;
-        if (mode === 'ca') v = Math.max(-6, Math.min(6, c / mad)) ;
+        if (mode === 'ca' || mode === 'ha') v = Math.max(-6, Math.min(6, c / mad)) ;
         else v = Math.max(0, -c / mad - 3.5);
         f[i * nT + k] = v * radW;
       }
@@ -285,7 +285,7 @@
 
   /**
    * Hauptfunktion.
-   * user/ref: {gray, w, h}; mode: 'wl'|'ca'; opts.knownFlip: true/false/null
+   * user/ref: {gray, w, h}; mode: 'wl'|'ca'|'ha'; opts.knownFlip: true/false/null
    * Rückgabe: {ok, reason, rotation, flip, ncc, ratio, groups, discUser, discRef, log[]}
    */
   function align(user, ref, mode, opts = {}) {
@@ -341,6 +341,9 @@
     if (mode === 'ca') {
       ok = best.ncc >= 0.35 && ratio >= 1.5;
       if (!ok) reason = 'Zu wenig eindeutige Strukturen (Plages/Flecken) für einen sicheren Abgleich.';
+    } else if (mode === 'ha') {
+      ok = best.ncc >= 0.28 && ratio >= 1.4;
+      if (!ok) reason = 'Filamente und Plages passen nicht eindeutig zum GONG-Referenzbild (Aufnahmezeit prüfen?).';
     } else if (nGroups >= 2) {
       ok = best.ncc >= 0.2 && ratio >= 1.2;
       if (!ok) reason = 'Fleckenmuster passt nicht eindeutig zur Referenz (Aufnahmezeit prüfen?).';
@@ -542,7 +545,7 @@
     const sc = opts.scale, rsun = opts.rsun;
     const f = Math.max(1, 0.9 / sc); // auf ≈ 0,9″/px verkleinern, Auflösung der Referenz
     const U = downsample(user.gray, user.w, user.h, f), s1 = sc / U.scale;
-    const blobs = detectBlobs(U.data, U.w, U.h, { radius: 30 / s1, threshold: mode === 'ca' ? -0.3 : -0.18, minPixels: Math.max(3, Math.round(4 / (s1 * s1))) });
+    const blobs = detectBlobs(U.data, U.w, U.h, { radius: 30 / s1, threshold: mode === 'ca' || mode === 'ha' ? -0.3 : -0.18, minPixels: Math.max(3, Math.round(4 / (s1 * s1))) });
     log.push(`Oberflächenbild: ${blobs.length} Flecken/Poren erkannt · Maßstab ${sc.toFixed(3)}″/px`);
     const userPts = blobs.slice(0, 40).map((b) => ({ x: (b.u - U.w / 2) * s1, y: -(b.v - U.h / 2) * s1, w: b.pixels * s1 * s1 }));
     const refPts = refSpots.map((r) => ({ x: r.x * rsun, y: r.y * rsun, w: r.areaMSH || r.pixels || 1 }));
@@ -568,6 +571,152 @@
     };
   }
 
-  const api = { detectBlobs, matchPatterns, alignSurface, fitSimilarity, toGray, downsample, detectDisc, classifyImage, fitCircleFixedR, polarContrast, featureMap, correlate, countGroups, clusterGroups, align, detectSpots, matchSpots, bilinear };
+
+  /* ======================= H-Alpha, Schärfe, Protuberanzen ======================= */
+
+  /**
+   * Heller Himmel? Bei H-Alpha werden Protuberanzen oft „negativ“ bearbeitet: Himmel weiß, Protuberanzen dunkel.
+   * Rückgabe {inverted, sky}: sky = Helligkeit des Himmels (0–255).
+   */
+  function skyInfo(g, w, h) {
+    const band = Math.max(2, Math.round(Math.min(w, h) * 0.03)), vals = [];
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (x < band || y < band || x >= w - band || y >= h - band) vals.push(g[y * w + x]);
+    vals.sort((a, b) => a - b);
+    const hi = percentile(g, 0.995);
+    // Negativ bearbeitet: ein deutlicher Teil des Bildrands ist (nahezu) gesättigt weiß und glatt
+    const lim = Math.max(232, 0.97 * hi);
+    const white = vals.filter((v) => v >= lim).length / vals.length;
+    const inverted = hi >= 240 && white >= 0.08;
+    return { inverted, sky: inverted ? vals[Math.floor(vals.length * (1 - white / 2))] : vals[Math.floor(vals.length * 0.1)] || 0, white };
+  }
+  /** Für die Randsuche: |Helligkeit − Himmel| – Scheibe hell, Himmel dunkel, Protuberanzen positiv. */
+  function normalizeSky(g, sky) {
+    const out = new Float32Array(g.length);
+    for (let i = 0; i < g.length; i++) out[i] = Math.abs(g[i] - sky);
+    return out;
+  }
+
+  /** Box-Unschärfe (Integralbild), Radius rad Pixel. */
+  function boxBlur(g, w, h, rad) {
+    const I = new Float64Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += g[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; } }
+    const out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - rad), y1 = Math.min(h, y + rad + 1);
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.max(0, x - rad), x1 = Math.min(w, x + rad + 1);
+        out[y * w + x] = (I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Feinstruktur der Scheibe: robuste Streuung des Kontrasts gegen eine leicht geglättete Umgebung.
+   * Weißlicht (Granulation, Rauschen) liegt typisch unter 0,05, H-Alpha (Fibrillen, Filamente) deutlich darüber.
+   */
+  function textureIndex(g, w, h, disc) {
+    const rad = Math.max(2, Math.round((disc ? disc.r : Math.min(w, h) / 2) * 0.012));
+    const b = boxBlur(g, w, h, rad), vals = [];
+    const step = Math.max(1, Math.round(Math.sqrt((w * h) / 60000)));
+    for (let y = rad; y < h - rad; y += step) for (let x = rad; x < w - rad; x += step) {
+      if (disc && Math.hypot(x - disc.cx, y - disc.cy) > disc.r * 0.85) continue;
+      const m = b[y * w + x]; if (m < 20) continue;
+      vals.push(Math.abs(g[y * w + x] / m - 1));
+    }
+    if (vals.length < 200) return null;
+    vals.sort((p, q) => p - q);
+    return vals[vals.length >> 1] * 1.4826;
+  }
+
+  /**
+   * Randschärfe: Breite des Helligkeitsabfalls am Sonnenrand (20 → 80 %), Median über alle sichtbaren Randstücke.
+   * Bei einem gaußförmigen Unschärfeprofil gilt FWHM ≈ 1,40 × Breite(20–80 %).
+   * Rückgabe {widthPx, fwhmPx, n} in Pixeln des übergebenen Bildes.
+   */
+  function limbSharpness(g, w, h, disc) {
+    const d = Math.max(6, disc.r * 0.012), step = 0.25, widths = [];
+    const nS = Math.ceil((2 * d) / step);
+    for (let a = 0; a < 360; a++) {
+      const t = (a / 360) * 2 * Math.PI, dx = Math.cos(t), dy = Math.sin(t), prof = [];
+      let ok = true;
+      for (let k = 0; k <= nS; k++) {
+        const rr = disc.r - d + k * step, v = bilinear(g, w, h, disc.cx + dx * rr, disc.cy + dy * rr);
+        if (Number.isNaN(v)) { ok = false; break; }
+        prof.push(v);
+      }
+      if (!ok) continue;
+      const m = Math.round(1.5 / step);
+      const inner = prof.slice(0, m).reduce((s, v) => s + v, 0) / m, outer = prof.slice(-m).reduce((s, v) => s + v, 0) / m;
+      const amp = inner - outer; if (amp < 15) continue;
+      const cross = (lvl) => { for (let k = 1; k < prof.length; k++) if (prof[k] <= lvl && prof[k - 1] > lvl) return (k - 1 + (prof[k - 1] - lvl) / (prof[k - 1] - prof[k])) * step; return null; };
+      // letzte Unterschreitung suchen (Überschwinger durch Schärfung am Rand ignorieren)
+      const p80 = cross(outer + 0.8 * amp), p20 = cross(outer + 0.2 * amp);
+      if (p80 == null || p20 == null || p20 <= p80) continue;
+      widths.push(p20 - p80);
+    }
+    if (widths.length < 20) return null;
+    widths.sort((p, q) => p - q);
+    const wd = widths[widths.length >> 1];
+    return { widthPx: wd, fwhmPx: 1.4 * wd, n: widths.length };
+  }
+
+  /**
+   * Protuberanzen am Rand messen (H-Alpha). g sollte so normiert sein, dass Protuberanzen heller als der Himmel sind
+   * (bei negativ bearbeiteten Bildern: normalizeSky). Für jeden Randwinkel wird das Radialprofil außerhalb der Scheibe
+   * mit dem Median aller Winkel verglichen (Streulicht/Halo fällt so heraus); signifikanter Überschuss = Protuberanz.
+   * Rückgabe: [{angle (Bild-Winkel, rad, atan2(dy,dx)), height (in Sonnenradien), width (Grad), peak}]
+   */
+  function measureProminences(g, w, h, disc, opts = {}) {
+    const nT = 720, r0 = disc.r * 1.006, r1 = disc.r * (opts.maxH || 1.3), step = Math.max(0.5, disc.r / 900);
+    const nR = Math.max(10, Math.ceil((r1 - r0) / step));
+    const P = new Float32Array(nT * nR).fill(NaN);
+    for (let k = 0; k < nT; k++) {
+      const t = (k / nT) * 2 * Math.PI, dx = Math.cos(t), dy = Math.sin(t);
+      for (let j = 0; j < nR; j++) { const rr = r0 + j * step; P[k * nR + j] = bilinear(g, w, h, disc.cx + dx * rr, disc.cy + dy * rr); }
+    }
+    const med = new Float32Array(nR), sd = new Float32Array(nR);
+    for (let j = 0; j < nR; j++) {
+      const col = []; for (let k = 0; k < nT; k++) { const v = P[k * nR + j]; if (!Number.isNaN(v)) col.push(v); }
+      if (col.length < 40) { med[j] = NaN; continue; }
+      col.sort((a, b) => a - b); const m = col[col.length >> 1];
+      const dev = col.map((v) => Math.abs(v - m)).sort((a, b) => a - b);
+      med[j] = m; sd[j] = Math.max(1.5, dev[dev.length >> 1] * 1.4826);
+    }
+    const kSig = opts.k || 5, minRun = 3;
+    const height = new Float32Array(nT), peak = new Float32Array(nT), valid = new Uint8Array(nT);
+    for (let k = 0; k < nT; k++) {
+      let run = 0, top = -1, pk = 0, seen = false;
+      for (let j = 0; j < nR; j++) {
+        const v = P[k * nR + j]; if (Number.isNaN(v) || Number.isNaN(med[j])) { run = 0; continue; }
+        seen = true;
+        const ex = (v - med[j]) / sd[j];
+        if (ex > kSig) { run++; if (run >= minRun) top = j; pk = Math.max(pk, ex); } else run = 0;
+      }
+      valid[k] = seen ? 1 : 0;
+      height[k] = top >= 0 ? (r0 + top * step - disc.r) / disc.r : 0; peak[k] = pk;
+    }
+    // zusammenhängende Winkelbereiche (Lücken ≤ 1°) mit Mindesthöhe ≈ 7.000 km
+    const minH = opts.minH || 0.01, out = [];
+    let k = 0;
+    const isOn = (i) => height[(i + nT) % nT] >= minH;
+    // Start an einer Stelle ohne Protuberanz, damit Bereiche über 0° nicht zerschnitten werden
+    let start = 0; while (start < nT && isOn(start)) start++;
+    if (start >= nT) return [];
+    for (let s = 0; s < nT; s++) {
+      const i = (start + s) % nT; if (!isOn(i)) continue;
+      let e = s, gap = 0;
+      while (e + 1 < nT) { if (isOn(start + e + 1)) { e++; gap = 0; } else if (gap < 2 && isOn(start + e + 2)) { e += 2; gap = 0; } else break; }
+      let hmax = 0, imax = i, pmax = 0;
+      for (let q = s; q <= e; q++) { const ii = (start + q) % nT; if (height[ii] > hmax) { hmax = height[ii]; imax = ii; } pmax = Math.max(pmax, peak[ii]); }
+      const width = ((e - s + 1) * 360) / nT;
+      if (width >= 1) out.push({ angle: (imax / nT) * 2 * Math.PI, height: hmax, width, peak: pmax, from: ((start + s) / nT) * 2 * Math.PI, to: ((start + e) / nT) * 2 * Math.PI });
+      s = e; k++;
+    }
+    const coverage = valid.reduce((a, b) => a + b, 0) / nT;
+    return { list: out.sort((a, b) => b.height * Math.sqrt(b.width) - a.height * Math.sqrt(a.width)).slice(0, opts.max || 10), coverage };
+  }
+
+  const api = { skyInfo, normalizeSky, boxBlur, textureIndex, limbSharpness, measureProminences, detectBlobs, matchPatterns, alignSurface, fitSimilarity, toGray, downsample, detectDisc, classifyImage, fitCircleFixedR, polarContrast, featureMap, correlate, countGroups, clusterGroups, align, detectSpots, matchSpots, bilinear };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SoluxAlign = api;
 })(typeof self !== 'undefined' ? self : this);

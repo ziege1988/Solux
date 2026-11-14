@@ -161,9 +161,33 @@
     return `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&hourly=${hourly.join(',')}&current=${current.join(',')}&wind_speed_unit=ms&timezone=UTC&forecast_days=2`;
   }
 
-  function buildWeather(w, loc, ratings, nowMs = Date.now()) {
+  /** Stundenwerte eines bestimmten Tages (für das Seeing-Modell zur Aufnahmezeit). Ältere Tage: Open-Meteo-Archiv der Vorhersagen. */
+  function weatherDayUrl(loc, date) {
+    const day = new Date(date).toISOString().slice(0, 10);
+    const old = Date.now() - new Date(date).getTime() > 80 * 86400000;
+    const hourly = ['temperature_2m', 'soil_temperature_0cm', 'shortwave_radiation', 'wind_speed_10m', 'wind_gusts_10m', 'wind_speed_850hPa', 'wind_speed_500hPa', 'wind_speed_250hPa', 'wind_speed_200hPa'];
+    return `https://${old ? 'historical-forecast-api' : 'api'}.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&hourly=${hourly.join(',')}&wind_speed_unit=ms&timezone=UTC&start_date=${day}&end_date=${day}`;
+  }
+  /** Unkalibriertes Modell-Seeing zu einem Zeitpunkt (lineare Interpolation zwischen den Stunden). */
+  function modelSeeingAt(w, loc, date) {
+    const H = w.hourly, t = new Date(date).getTime();
+    const at = (i) => {
+      if (i < 0 || i >= H.time.length || H.shortwave_radiation[i] == null) return null;
+      const alt = astro.sunAltAz(new Date(t), loc.lat, loc.lon).alt;
+      const s = seeingModel.estimate({ sw: H.shortwave_radiation[i], t2m: H.temperature_2m[i], tSoil: H.soil_temperature_0cm[i], wind10: H.wind_speed_10m[i], gust10: H.wind_gusts_10m[i], w850: H.wind_speed_850hPa[i], w500: H.wind_speed_500hPa[i], w250: H.wind_speed_250hPa[i], w200: H.wind_speed_200hPa[i], alt }, { surface: loc.surface });
+      return s ? s.seeing : null;
+    };
+    // Stundenwerte der Einstrahlung gelten für die vorangegangene Stunde -> Stundenmitte
+    const pos = (t - new Date(H.time[0] + ':00Z').getTime()) / 3600000 + 0.5;
+    const i0 = Math.floor(pos), f = pos - i0, a = at(i0), b = at(i0 + 1);
+    if (a == null) return b; if (b == null) return a;
+    return a * (1 - f) + b * f;
+  }
+
+  function buildWeather(w, loc, ratings, nowMs = Date.now(), calibOverride = null) {
     const H = w.hourly;
-    const calib = seeingModel.calibrationFrom(ratings || []);
+    const calInfo = seeingModel.calibrationInfo(ratings || []);
+    const calib = calibOverride > 0 ? calibOverride : calInfo.factor;
     const hours = H.time.map((t, i) => {
       const time = new Date(t + ':00Z');
       const alt = astro.sunAltAz(new Date(time.getTime() + 1800000), loc.lat, loc.lon).alt;
@@ -186,6 +210,7 @@
       best: seeingModel.bestWindow(today),
       hours: hours.slice(idx, idx + 14),
       calibration: calib,
+      calibrationInfo: calibOverride > 0 ? { factor: calibOverride, n: 0, source: 'manuell' } : calInfo,
     };
   }
 
@@ -333,6 +358,6 @@
     return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
   }
 
-  const api = { newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
+  const api = { newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, weatherDayUrl, modelSeeingAt, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);

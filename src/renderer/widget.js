@@ -327,18 +327,16 @@
         <span>Bodenschicht</span><span>${fmt.num(s.parts.ground, 2)}″</span><span>Freie Atmosphäre</span><span>${fmt.num(s.parts.free, 2)}″</span><span>Jetstream</span><span>${fmt.num(s.parts.upper, 2)}″ (${fmt.num(s.jet, 0)} m/s)</span>
         <span>Bestes Fenster</span><span>${best}</span></div>` : '<p>Keine Daten.</p>'}
         <span class="lbl">Seeing nächste Stunden (″)</span>${hourCells('seeing', (h) => (h.seeing == null ? ['off', '–'] : [S.rating(h.seeing).level, fmt.num(h.seeing)]))}
-        <div class="box"><b>Wie war das Seeing gerade?</b><br><span class="note">Deine Bewertung kalibriert das Modell auf deinen Hof (Faktor jetzt ×${fmt.num(w.calibration, 2)}).</span>
-        <div class="rate" id="rate" style="margin-top:6px"><button data-r="1">1 sehr ruhig</button><button data-r="2">2 ruhig</button><button data-r="3">3 mittel</button><button data-r="4">4 unruhig</button><button data-r="5">5 sehr unruhig</button></div></div>
+        <p class="note">${calText(w)}</p>
         <p class="note">Schätzung aus Sonneneinstrahlung, Boden-/Lufttemperatur, Wind, Windscherung und Jetstream (Open-Meteo) sowie der Sonnenhöhe. Grün &lt; 2″, Orange 2–3,5″, Rot darüber.</p>`;
     }
     openPop(html);
-    const rate = $('#rate');
-    if (rate) rate.addEventListener('click', async (e) => {
-      const b = e.target.closest('button'); if (!b || !w.seeing) return;
-      const cal = await api.rateSeeing(+b.dataset.r, w.seeing.value / (w.calibration || 1));
-      rate.outerHTML = `<p class="note" style="margin-top:6px">Danke – Kalibrierfaktor jetzt ×${fmt.num(cal, 2)}.</p>`;
-      loadWeather();
-    });
+  }
+  function calText(w) {
+    const ci = w.calibrationInfo || {};
+    if (ci.source === 'manuell') return `Kalibriert mit Faktor ×${fmt.num(ci.factor, 2)} (vom Mac).`;
+    if (ci.source === 'bilder' && ci.n >= 2) return `Auf deinen Hof kalibriert: Faktor ×${fmt.num(ci.factor, 2)} aus ${ci.n} Weißlicht-Aufnahmen (Randschärfe).`;
+    return WEB ? 'Noch nicht kalibriert – Faktor vom Mac unter Einstellungen → Über Solux eintragen.' : 'Noch nicht kalibriert – Solux lernt automatisch aus deinen Weißlicht-Aufnahmen (Randschärfe).';
   }
 
   /* ---------------- Newsroom ---------------- */
@@ -375,57 +373,67 @@
   $('#setNav').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) openSettings(b.dataset.s); });
 
   const SURF = S.SURFACES;
+  const pathSet = (p, v) => p.split('.').reduceRight((acc, k) => ({ [k]: acc }), v);
+  const MODES = [['wl', 'Weißlicht'], ['ca', 'Kalzium (Ca-K)'], ['ha', 'H-Alpha']];
+  const opticScale = (o) => (o && o.focal > 0 && o.pixel > 0 ? (206.265 * o.pixel * (o.binning || 1)) / o.focal : null);
+  const opticNote = (o) => { const sc = opticScale(o); return sc ? `${fmt.num(sc, 3)}″ pro Pixel · Sonne ≈ ${Math.round((2 * 959.6) / sc).toLocaleString('de-DE')} px Durchmesser` : 'Ohne Angabe: ganze Sonne und lange Randbögen klappen trotzdem, Oberflächenbilder nicht.'; };
+  const NOTIFY_INFO = `<div class="box"><b>Interessant</b> = X-Flares und M-Flares ab M5, besonders aktive oder große Fleckengruppen im Blickfeld (δ-Magnetfeld, über 300 MH, hohe Flare-Chance), Polarlicht-Chance am Standort, starke Stürme und Protonenereignisse.<br><b>Alle</b> = zusätzlich jeder M-Flare, neue Regionen und geomagnetische Stürme.</div>
+      <p class="note">Mitteilungen kommen nur, solange die Sonne an deinem Standort über dem Horizont steht, und jede Region bzw. Meldung höchstens einmal am Tag – außer es passiert etwas Neues (z. B. ein weiterer Flare).</p>`;
+
   const SECTIONS = {
     allg: (c) => `<h3>Allgemein</h3>
       <label class="chk"><input type="checkbox" data-p="general.openAtLogin" ${c.general.openAtLogin ? 'checked' : ''}> Bei Anmeldung starten</label>
-      <label class="chk"><input type="checkbox" data-p="widget.alwaysOnTop" ${c.widget.alwaysOnTop ? 'checked' : ''}> Immer im Vordergrund</label>
       <label class="chk"><input type="checkbox" data-p="widget.showSplash" ${c.widget.showSplash ? 'checked' : ''}> Startbild beim Öffnen zeigen</label>
-      <div class="field"><label for="opa">Deckkraft ${Math.round(c.widget.opacity * 100)} %</label><input id="opa" type="range" min="0.5" max="1" step="0.05" value="${c.widget.opacity}" data-p="widget.opacity" data-num></div>
-      <div class="field"><label for="scl">Größe</label><select id="scl" data-p="widget.scale" data-num>${[0.85, 1, 1.15, 1.3].map((v) => `<option value="${v}" ${c.widget.scale === v ? 'selected' : ''}>${Math.round(v * 100)} %</option>`).join('')}</select></div>
+      <label class="chk"><input type="checkbox" data-p="widget.alwaysOnTop" ${c.widget.alwaysOnTop ? 'checked' : ''}> Widget immer im Vordergrund</label>
+      <div class="row2"><div class="field"><label for="scl">Größe</label><select id="scl" data-p="widget.scale" data-num>${[0.85, 1, 1.15, 1.3].map((v) => `<option value="${v}" ${c.widget.scale === v ? 'selected' : ''}>${Math.round(v * 100)} %</option>`).join('')}</select></div>
+      <div class="field"><label for="opa">Deckkraft ${Math.round(c.widget.opacity * 100)} %</label><input id="opa" type="range" min="0.5" max="1" step="0.05" value="${c.widget.opacity}" data-p="widget.opacity" data-num></div></div>
       <button class="ghost" id="hideW" style="align-self:flex-start">Widget ausblenden (Menüleiste ☀︎)</button>
       <p class="note">Solux läuft im Hintergrund weiter und ist über das Sonnensymbol in der Menüleiste erreichbar.</p>`,
     ort: (c) => `<h3>Standort</h3>
       ${WEB ? '<button class="ghost" id="gpsBtn" style="align-self:flex-start">Aktuellen Standort verwenden</button>' : ''}
       <div class="field"><label for="locq">Ort suchen</label><div style="display:flex;gap:6px"><input class="inp" id="locq" value="${esc(c.location.name)}"><button class="ghost" id="locBtn">Suchen</button></div></div>
       <div class="results" id="locRes"></div>
-      <div class="row2"><div class="field"><label for="lat">Breite °N</label><input id="lat" type="number" step="0.0001" value="${c.location.lat}" data-p="location.lat" data-num></div>
-      <div class="field"><label for="lon">Länge °E</label><input id="lon" type="number" step="0.0001" value="${c.location.lon}" data-p="location.lon" data-num></div></div>
-      <div class="row2"><div class="field"><label for="ele">Höhe m</label><input id="ele" type="number" value="${c.location.elevation}" data-p="location.elevation" data-num></div>
-      <div class="field"><label for="mnt">Montierung</label><select id="mnt" data-p="location.mount"><option value="altaz" ${c.location.mount === 'altaz' ? 'selected' : ''}>azimutal</option><option value="eq" ${c.location.mount === 'eq' ? 'selected' : ''}>parallaktisch</option></select></div></div>
-      <div class="field"><label for="srf">Untergrund am Teleskop (für Seeing)</label><select id="srf" data-p="location.surface">${Object.entries(SURF).map(([k, v]) => `<option value="${k}" ${c.location.surface === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></div>
+      <div class="row3"><div class="field"><label for="lat">Breite °N</label><input id="lat" type="number" step="0.0001" value="${c.location.lat}" data-p="location.lat" data-num></div>
+      <div class="field"><label for="lon">Länge °E</label><input id="lon" type="number" step="0.0001" value="${c.location.lon}" data-p="location.lon" data-num></div>
+      <div class="field"><label for="ele">Höhe m</label><input id="ele" type="number" value="${c.location.elevation}" data-p="location.elevation" data-num></div></div>
+      <div class="field"><label for="srf">Untergrund am Teleskop (für das Seeing)</label><select id="srf" data-p="location.surface">${Object.entries(SURF).map(([k, v]) => `<option value="${k}" ${c.location.surface === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></div>
       <p class="note">Koordinaten bleiben auf ${WEB ? 'diesem Gerät' : 'deinem Mac'} und werden nur für Wetterabfragen (Open-Meteo) genutzt.</p>`,
-    daten: (c) => `<h3>Daten &amp; Quellen</h3>
-      <div class="field"><label for="ref">Aktualisierung</label><select id="ref" data-p="data.refreshMinutes" data-num>${[10, 15, 30, 60].map((v) => `<option value="${v}" ${c.data.refreshMinutes === v ? 'selected' : ''}>alle ${v} Minuten</option>`).join('')}</select></div>
-      <div class="box" id="storeBox">Lade Speicherinfo …</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="refNow">Jetzt aktualisieren</button>${WEB ? '' : '<button class="ghost" id="clrImg">Bild-Zwischenspeicher leeren</button><button class="ghost" id="logBtn">Protokoll zeigen</button>'}</div>
-      <p class="note">Sonnenbilder: NASA SDO über Helioviewer · Regionen, Flares, Kp, Meldungen: NOAA SWPC${WEB ? ' (ca. 30 Tage online)' : ' (lokal 60 Tage gesammelt)'} · Wetter: Open-Meteo.</p>
-      ${WEB ? `<p class="note">Solux mobil ${esc(c.version)} · aktualisiert sich automatisch beim Öffnen.</p>` : ''}`,
-    aufn: (c) => `<h3>Aufnahmen</h3>
-      <div class="field"><label>Standard-Zielordner</label><div class="note" style="word-break:break-all">${esc(c.recordings.folder || 'noch nicht gewählt – wird beim ersten Speichern gefragt')}</div></div>
-      <div class="row2"><div class="field"><label for="jq">JPEG-Qualität</label><select id="jq" data-p="recordings.jpegQuality" data-num>${[85, 90, 95, 98, 100].map((v) => `<option ${c.recordings.jpegQuality === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      <div class="field"><label for="ls">Beschriftung</label><select id="ls" data-p="recordings.labelStyle"><option value="full" ${c.recordings.labelStyle === 'full' ? 'selected' : ''}>AR + McIntosh</option><option value="short" ${c.recordings.labelStyle === 'short' ? 'selected' : ''}>nur AR-Nummer</option></select></div></div>
-      <label class="chk"><input type="checkbox" data-p="recordings.legend" ${c.recordings.legend ? 'checked' : ''}> Legende standardmäßig anhängen</label>
-      <label class="chk"><input type="checkbox" data-p="recordings.grid" ${c.recordings.grid ? 'checked' : ''}> Heliografisches Gradnetz einzeichnen</label>
-      <p class="note">Das Aufnahmedatum liest Solux aus dem Dateinamen (z. B. „Sonne_23.04.2024_1042.jpg“) und fragt es vor jeder Auswertung ab. EXIF-Daten werden nicht verwendet, da sie nach der Bearbeitung nicht mehr die Aufnahmezeit enthalten.</p>
-      <span class="lbl">Setup-Profile</span>
-      ${['wl', 'ca'].map((m) => { const p = c.profiles[m]; return `<div class="box"><b>${esc(p.name)}</b><br><span class="note">Spiegelung: ${p.flip == null ? 'noch unbekannt' : p.flip ? 'gespiegelt' : 'nicht gespiegelt'} · ${p.history.length} Ausrichtungen gespeichert</span><br><button class="ghost" data-reset="${m}" style="margin-top:6px">Profil zurücksetzen</button></div>`; }).join('')}`,
+    ausr: (c) => `<h3>Ausrüstung</h3>
+      <div class="field"><label for="mnt">Montierung</label><select id="mnt" data-p="location.mount"><option value="altaz" ${c.location.mount === 'altaz' ? 'selected' : ''}>azimutal (Bildfeld dreht sich)</option><option value="eq" ${c.location.mount === 'eq' ? 'selected' : ''}>parallaktisch</option></select></div>
+      ${MODES.map(([m, label]) => { const p = c.profiles[m] || {}, o = p.optics || {}; return `<div class="box prof">
+        <b>${label}</b><input class="inp" data-p="profiles.${m}.name" value="${esc(p.name || '')}" aria-label="Bezeichnung ${label}" placeholder="Bezeichnung des Aufbaus">
+        <div class="row3"><div class="field"><label>Brennweite</label><input type="number" min="50" step="any" placeholder="mm" data-p="profiles.${m}.optics.focal" data-num value="${o.focal || ''}"></div>
+        <div class="field"><label>Pixel</label><input type="number" min="0.5" step="any" placeholder="µm" data-p="profiles.${m}.optics.pixel" data-num value="${o.pixel || ''}"></div>
+        <div class="field"><label>Binning</label><select data-p="profiles.${m}.optics.binning" data-num>${[1, 2, 3, 4].map((v) => `<option ${(o.binning || 1) === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div></div>
+        <span class="note" data-scale="${m}">${opticNote(o)}</span>
+        <span class="note">Gelernte Ausrichtung: ${p.flip == null ? 'noch unbekannt' : p.flip ? 'Bild gespiegelt' : 'nicht gespiegelt'} · ${(p.history || []).length} Aufnahmen <button class="lnk" data-reset="${m}">zurücksetzen</button></span></div>`; }).join('')}
+      <div class="field"><label>Zielordner für Exporte</label><div style="display:flex;gap:6px;align-items:center"><span class="note" style="word-break:break-all;flex:1">${esc(c.recordings.folder || 'noch nicht gewählt – wird beim ersten Export gefragt')}</span><button class="ghost" id="folderBtn">Ändern …</button></div></div>
+      <label class="chk"><input type="checkbox" data-p="recordings.diary" ${c.recordings.diary !== false ? 'checked' : ''}> Ausgewertete Aufnahmen im Tagebuch speichern</label>
+      <p class="note">Brennweite in mm inklusive Barlow, Pixelgröße der Kamera in µm. Beide bestimmen den Bildmaßstab – nötig für Oberflächenbilder und kurze Randbögen. Die Spiegelung lernt Solux beim Ausrichten selbst. Text, Skala, Format und Qualität wählst du im Export-Dialog unter „Aufnahmen“.</p>`,
     hinw: (c) => `<h3>Mitteilungen</h3>
       <div class="field"><label for="nm">Mitteilungen am Mac</label><select id="nm" data-p="notify.mode">
         <option value="interessant" ${(c.notify.mode || 'interessant') === 'interessant' ? 'selected' : ''}>Nur interessante Meldungen</option>
         <option value="alle" ${c.notify.mode === 'alle' ? 'selected' : ''}>Alle neuen Meldungen</option>
         <option value="aus" ${c.notify.mode === 'aus' ? 'selected' : ''}>Aus</option></select></div>
-      <div class="box"><b>Interessant</b> = X-Flares und M-Flares ab M5, besonders aktive oder große Fleckengruppen im Blickfeld (δ-Magnetfeld, über 300 MH, hohe Flare-Chance), Polarlicht-Chance am Standort, starke Stürme und Protonenereignisse.<br><b>Alle</b> = zusätzlich jeder M-Flare, neue Regionen und geomagnetische Stürme.</div>
-      <p class="note">Mitteilungen kommen nur, solange die Sonne an deinem Standort über dem Horizont steht, und jede Region bzw. Meldung höchstens einmal am Tag – außer es passiert etwas Neues (z. B. ein weiterer Flare).</p>
-      <label class="chk"><input type="checkbox" data-p="notify.goodWindow" ${c.notify.goodWindow ? 'checked' : ''}> Zusätzlich: gutes Beobachtungsfenster (klar, ruhig, windstill)</label>`,
-    upd: (c) => `<h3>Updates</h3>
-      <div class="box" style="display:flex;flex-direction:column;gap:8px"><span>Installiert: <b>Solux ${esc(c.version)}</b>${c.packaged ? '' : ' (Entwicklungsmodus)'}</span>
+      <label class="chk"><input type="checkbox" data-p="notify.goodWindow" ${c.notify.goodWindow ? 'checked' : ''}> Zusätzlich: gutes Beobachtungsfenster (klar, ruhig, windstill)</label>
+      ${NOTIFY_INFO}`,
+    about: (c) => `<h3>Über Solux</h3>
+      ${WEB ? `<div class="box">Solux mobil <b>${esc(c.version)}</b> · aktualisiert sich automatisch beim Öffnen.</div>` : `<div class="box" style="display:flex;flex-direction:column;gap:8px"><span>Installiert: <b>Solux ${esc(c.version)}</b>${c.packaged ? '' : ' (Entwicklungsmodus)'}</span>
       <label class="chk"><input type="checkbox" data-p="update.auto" ${c.update.auto ? 'checked' : ''}> Automatisch nach Updates suchen</label>
-      <button class="pbtn" id="chkUpd" style="align-self:flex-start">Nach Updates suchen</button><div id="updRes" style="display:flex;flex-direction:column;gap:8px"></div></div>
-      <p class="note">Beim Installieren wird Solux beendet, ersetzt und mit Startbild neu geöffnet. Quelle: GitHub-Releases (${esc(c.update.repo)}).${c.update.lastCheck ? ' Zuletzt geprüft ' + fmt.ago(new Date(c.update.lastCheck).getTime()) + '.' : ''}</p>`,
+      <button class="pbtn" id="chkUpd" style="align-self:flex-start">Nach Updates suchen</button><div id="updRes" style="display:flex;flex-direction:column;gap:8px"></div>
+      <span class="note">Beim Installieren wird Solux beendet, ersetzt und mit Startbild neu geöffnet. Quelle: GitHub-Releases (${esc(c.update.repo)}).${c.update.lastCheck ? ' Zuletzt geprüft ' + fmt.ago(new Date(c.update.lastCheck).getTime()) + '.' : ''}</span></div>`}
+      <span class="lbl">Seeing-Kalibrierung</span>
+      <div class="box" id="calBox">Lade …</div>
+      ${WEB ? `<div class="field"><label for="calF">Faktor vom Mac übernehmen (leer = ohne)</label><input id="calF" type="number" min="0.5" max="2" step="0.01" value="${c.seeing && c.seeing.factor ? c.seeing.factor : ''}" placeholder="z. B. 1.12"></div>` : ''}
+      <span class="lbl">Daten</span>
+      <div class="field"><label for="ref">Aktualisierung</label><select id="ref" data-p="data.refreshMinutes" data-num>${[10, 15, 30, 60].map((v) => `<option value="${v}" ${c.data.refreshMinutes === v ? 'selected' : ''}>alle ${v} Minuten</option>`).join('')}</select></div>
+      <div class="box" id="storeBox">Lade Speicherinfo …</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="refNow">Jetzt aktualisieren</button>${WEB ? '' : '<button class="ghost" id="clrImg">Bild-Zwischenspeicher leeren</button><button class="ghost" id="logBtn">Protokoll zeigen</button>'}</div>
+      <p class="note">Quellen: Sonnenbilder NASA SDO und NSO/GONG über Helioviewer · Regionen, Flares, Kp, Meldungen NOAA SWPC${WEB ? ' (ca. 30 Tage online)' : ' (lokal 60 Tage gesammelt, ältere Tage aus dem NOAA-Archiv)'} · Wetter Open-Meteo.</p>`,
   };
 
-  SECTIONS.push = () => `<h3>Push-Mitteilungen</h3>
-      <p>Solux meldet sich auf diesem iPhone – auch wenn die App geschlossen ist. Gemeldet wird nur, solange die Sonne an deinem Standort über dem Horizont steht, und jede Region bzw. Meldung höchstens einmal am Tag.</p>
+  SECTIONS.push = () => `<h3>Mitteilungen</h3>
+      <p>Solux meldet sich auf diesem iPhone – auch wenn die App geschlossen ist.</p>
       <div class="field"><label for="pmode">Was soll gemeldet werden?</label><select id="pmode" class="inp">
         <option value="interessant">Nur interessante Meldungen</option><option value="alle">Alle neuen Meldungen</option><option value="aus">Aus</option></select></div>
       <div class="box" id="pushBox">Prüfe …</div>
@@ -435,7 +443,8 @@
         <textarea id="pushJson" class="inp" rows="5" readonly style="width:100%;font:11px var(--f-mono)"></textarea>
         <button class="ghost" id="pushCopy">Code kopieren</button>
       </div>
-      <p class="note"><b>Interessant:</b> X-Flares, M-Flares ab M5, besonders aktive/große Fleckengruppen im Blickfeld, Polarlicht-Chance, starke Stürme. <b>Alle:</b> zusätzlich jeder M-Flare, neue Regionen, geomagnetische Stürme.</p>`;
+      ${NOTIFY_INFO}`;
+  if (WEB) SECTIONS.hinw = SECTIONS.push;
 
   async function openSettings(sec) {
     state.cfg = await api.getConfig();
@@ -444,11 +453,13 @@
     const body = $('#setBody');
     body.innerHTML = `<div style="display:flex;justify-content:flex-end;margin:-4px -2px -12px 0"><button class="xbtn" data-close aria-label="Einstellungen schließen">×</button></div>` + SECTIONS[sec](state.cfg);
     body.querySelectorAll('[data-p]').forEach((el) => el.addEventListener(el.type === 'range' ? 'input' : 'change', async () => {
-      const [a, b] = el.dataset.p.split('.');
+      const a = el.dataset.p.split('.')[0];
       let v = el.type === 'checkbox' ? el.checked : el.value;
-      if ('num' in el.dataset) v = parseFloat(v);
-      state.cfg = await api.setConfig({ [a]: { [b]: v } });
+      if ('num' in el.dataset) { v = parseFloat(v); if (Number.isNaN(v)) v = null; }
+      state.cfg = await api.setConfig(pathSet(el.dataset.p, v));
       if (el.id === 'opa') el.previousElementSibling.textContent = `Deckkraft ${Math.round(v * 100)} %`;
+      const pm = el.dataset.p.match(/^profiles\.(\w+)\.optics/);
+      if (pm) body.querySelector(`[data-scale="${pm[1]}"]`).textContent = opticNote(state.cfg.profiles[pm[1]].optics);
       if (a === 'location') { drawAltitude(); loadWeather(); loadNews(); }
     }));
     if (sec === 'allg') $('#hideW').addEventListener('click', () => api.hideWidget());
@@ -473,12 +484,32 @@
       });
       $('#locq').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
     }
-    if (sec === 'daten') {
+    if (sec === 'about') {
+      const showCal = async () => {
+        try {
+          const f = state.cfg.seeing && state.cfg.seeing.factor;
+          const ci = WEB ? (f ? { factor: f, n: 0, source: 'manuell' } : { factor: 1, n: 0, source: null }) : await api.seeing.info();
+          let txt;
+          if (ci.source === 'manuell') txt = `Faktor <b>×${fmt.num(ci.factor, 2)}</b> (vom Mac übernommen).`;
+          else if (ci.source === 'bilder' && ci.n >= 2) txt = `Faktor <b>×${fmt.num(ci.factor, 2)}</b> aus ${ci.n} Weißlicht-Aufnahmen gelernt.`;
+          else if (ci.source === 'bilder') txt = `Noch ${2 - ci.n} Weißlicht-Aufnahme(n) bis zur ersten Kalibrierung.`;
+          else if (ci.source === 'bewertung') txt = `Faktor <b>×${fmt.num(ci.factor, 2)}</b> aus früheren Handbewertungen – wird durch Messungen aus Aufnahmen ersetzt.`;
+          else txt = WEB ? 'Noch keine Kalibrierung. Am Mac lernt Solux sie aus deinen Aufnahmen – den Faktor hier eintragen.' : 'Noch keine Kalibrierung – Solux lernt sie automatisch aus deinen Weißlicht-Aufnahmen unter „Aufnahmen“.';
+          $('#calBox').innerHTML = `${txt}<br><span class="note">Gemessen wird die Schärfe des Sonnenrands (in Bogensekunden) und mit dem Seeing-Modell zur Aufnahmezeit verglichen. Kalzium und H-Alpha haben einen natürlich weichen Rand und zählen deshalb nicht mit.</span>${!WEB && ci.n ? '<br><button class="lnk" id="calReset">Kalibrierung zurücksetzen</button>' : ''}`;
+          const rb = $('#calReset'); if (rb) rb.addEventListener('click', async () => { if (confirm('Alle gelernten Seeing-Messungen löschen?')) { await api.seeing.reset(); showCal(); } });
+        } catch (e) { $('#calBox').textContent = 'Kalibrierung nicht lesbar: ' + e.message; }
+      };
+      showCal();
+      if (WEB) $('#calF').addEventListener('change', async (e) => { const v = parseFloat(e.target.value); state.cfg = await api.setConfig({ seeing: { factor: v >= 0.5 && v <= 2 ? v : null } }); loadWeather(); showCal(); });
       api.storeInfo().then((i) => { $('#storeBox').innerHTML = `Lokaler Verlauf: <b>${i.days} Tage</b>${i.from ? ` (${i.from} bis ${i.to})` : ''}<br><span class="note">Speicher ${(i.bytes / 1048576).toFixed(1)} MB · ${esc(i.dir)}</span>`; });
       $('#refNow').addEventListener('click', async (e) => { e.target.textContent = 'Aktualisiere …'; await api.refresh(); loadSun(); e.target.textContent = 'Aktualisiert ✓'; });
       if (!WEB) { $('#clrImg').addEventListener('click', async (e) => { await api.clearImages(); e.target.textContent = 'Geleert ✓'; }); $('#logBtn').addEventListener('click', () => api.showLog()); }
     }
-    if (sec === 'push' && api.push) {
+    if (sec === 'ausr') {
+      $('#folderBtn').addEventListener('click', async () => { const f = await api.rec.chooseFolder(); if (f) openSettings('ausr'); });
+      body.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => { await api.rec.profileReset(b.dataset.reset); openSettings('ausr'); }));
+    }
+    if (WEB && sec === 'hinw' && api.push) {
       const show = async () => {
         const st2 = await api.push.status();
         $('#pmode').value = st2.mode;
@@ -494,8 +525,7 @@
       $('#pushTest').addEventListener('click', () => api.push.test().catch((err) => ($('#pushBox').textContent = err.message)));
       $('#pushCopy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText($('#pushJson').value); api.push.markCopied($('#pushJson').value); e.target.textContent = 'Kopiert ✓'; } catch { $('#pushJson').select(); } });
     }
-    if (sec === 'aufn') body.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => { await api.rec.profileReset(b.dataset.reset); openSettings('aufn'); }));
-    if (sec === 'upd') {
+    if (sec === 'about' && !WEB) {
       const res = $('#updRes');
       const showInstall = (info) => {
         res.innerHTML = `<p>Solux ${esc(info.latest)} ist verfügbar.</p>${info.notes ? `<p class="note" style="white-space:pre-wrap">${esc(info.notes.slice(0, 400))}</p>` : ''}<button class="pbtn" id="instUpd" style="align-self:flex-start">Installieren und neu starten</button><div class="progress" hidden id="prog"><i></i></div>`;

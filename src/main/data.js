@@ -176,6 +176,24 @@ class DataStore {
     return seeingModel.calibrationFrom(r);
   }
 
+  /**
+   * Gemessenes Seeing einer Aufnahme speichern: Modellwert zur Aufnahmezeit (ohne Kalibrierung) dazuholen,
+   * Verhältnis merken und den neuen Kalibrierfaktor zurückgeben.
+   */
+  async seeingRecord(cfg, { time, measured, mode, file }) {
+    const w = await this.fetchJSON(SW.weatherDayUrl(cfg.location, time));
+    const model = SW.modelSeeingAt(w, cfg.location, time);
+    if (!(model > 0)) return { model: null, measured, ...seeingModel.calibrationInfo(this.load('ratings.json', [])) };
+    const key = `${file}|${new Date(time).toISOString()}`;
+    const r = this.load('ratings.json', []).filter((x) => x.key !== key);
+    r.push({ key, time: new Date(time).toISOString(), measured, model, mode, file, added: new Date().toISOString() });
+    this.save('ratings.json', r.slice(-120));
+    this.wcache = null;
+    return { model, measured, ...seeingModel.calibrationInfo(r) };
+  }
+  seeingInfo() { const r = this.load('ratings.json', []); return { ...seeingModel.calibrationInfo(r), records: r.filter((x) => x.measured).slice(-12) }; }
+  seeingReset() { this.save('ratings.json', []); this.wcache = null; return seeingModel.calibrationInfo([]); }
+
   /* ---------------- Newsroom ---------------- */
   news(cfg) {
     const misc = this.load('misc.json', {});
