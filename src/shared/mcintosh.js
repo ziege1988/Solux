@@ -144,6 +144,65 @@
     return t;
   }
 
+  /* ---------- Zusammenfassung einer Region „für Einsteiger“ ---------- */
+  const deKm = (km) => Math.round(km).toLocaleString('de-DE');
+  /**
+   * r: Region (region, spotClass, magClass, area, numberSpots, extent, location, probs, flares, firstDate, type)
+   * hist: Verlauf [{day, cls, area}], flares: [{cls, max}] der Region, kind: 'wl'|'ca'|'ha'
+   * Liefert { fazit, sections: [{h, p}] }.
+   */
+  function regionStory(r, hist = [], flares = [], kind = 'wl') {
+    const S = [];
+    const spots = r.type === 'spots' && r.spotClass;
+    S.push({ h: 'Was ist das?', p: `AR ${r.region} ist eine „aktive Region“ – ein Gebiet, in dem starke Magnetfelder aus dem Sonneninneren an die Oberfläche treten. Dort ist die Oberfläche kühler und erscheint im Weißlicht als dunkle Sonnenflecken. ${spots ? 'Im Kalzium- und H-Alpha-Licht leuchtet die Umgebung als helle Fackelfläche (Plage).' : 'Hier gibt es gerade keine Flecken – im Kalzium- und H-Alpha-Licht leuchtet das Gebiet aber hell (Plage).'}` });
+    if (spots) {
+      S.push({ h: 'Wie sieht sie aus?', p: `${plainSummary(r.spotClass, '')}${r.numberSpots ? ` Insgesamt zählt NOAA ${r.numberSpots} einzelne Flecken.` : ''}` });
+      const size = [];
+      if (r.area) { const earths = r.area / 41.9; size.push(`Die dunklen Flecken bedecken zusammen ${r.area} millionstel der sichtbaren Sonnenhälfte – das sind rund ${deKm(r.area * 3.044)} Millionen km², ${earths >= 1 ? `etwa ${Math.round(earths)}-mal` : `etwa ${earths.toFixed(1).replace('.', ',')}-mal`} die Fläche der Erdscheibe.`); }
+      if (r.extent) { const km = r.extent * 12147; size.push(`Von einem Ende zum anderen ist die Gruppe etwa ${r.extent}° lang, also rund ${deKm(km)} km – ${Math.round(km / 12742)} Erden passen nebeneinander hinein.`); }
+      if (r.area >= 500) size.push('Das ist eine sehr große Gruppe – mit Sonnenfilterbrille schon mit bloßem Auge erkennbar.');
+      else if (r.area >= 200) size.push('Das ist eine große Gruppe, schon in kleinen Teleskopen eindrucksvoll.');
+      else if (r.area >= 50) size.push('Eine mittelgroße Gruppe.');
+      else if (r.area) size.push('Eine kleine Gruppe, im Teleskop als Grüppchen dunkler Punkte sichtbar.');
+      if (size.length) S.push({ h: 'Wie groß ist sie?', p: size.join(' ') });
+    }
+    // Entwicklung
+    if (hist && hist.length > 1) {
+      const a = hist[0], b = hist[hist.length - 1], prev = hist[Math.max(0, hist.length - 3)];
+      const trend = (b.area || 0) > (prev.area || 0) * 1.2 ? 'wächst gerade' : (b.area || 0) < (prev.area || 0) * 0.8 ? 'wird gerade kleiner' : 'bleibt in den letzten Tagen etwa gleich groß';
+      const days = Math.round((Date.parse(b.day) - Date.parse(a.day)) / 86400000);
+      S.push({ h: 'Wie entwickelt sie sich?', p: `Seit ${days} Tag${days === 1 ? '' : 'en'} beobachtet (Klasse damals ${a.cls}, heute ${b.cls}). Die Gruppe ${trend}${a.area && b.area ? ` (von ${a.area} auf ${b.area} MH)` : ''}.` });
+    }
+    // Aktivität
+    const risk = riskOf(r.spotClass, r.magClass, r.probs);
+    const word = (p) => (p == null ? null : p >= 60 ? 'wahrscheinlich' : p >= 30 ? 'gut möglich' : p >= 10 ? 'möglich, aber eher selten' : 'unwahrscheinlich');
+    const act = [];
+    if (r.magClass) act.push(MW_PLAIN[String(r.magClass).toUpperCase().includes('D') ? 'D' : String(r.magClass).toUpperCase().includes('G') ? 'G' : String(r.magClass).toUpperCase()[0]] || '');
+    if (r.probs && r.probs.m != null) act.push(`Ein mittlerer Strahlungsausbruch (M-Flare) in den nächsten 24 Stunden ist ${word(r.probs.m)} (${r.probs.m} %), ein starker X-Flare ${word(r.probs.x)} (${r.probs.x ?? '–'} %).`);
+    if (flares && flares.length) {
+      const m = flares.filter((f) => /^[MX]/.test(f.cls)), c = flares.filter((f) => /^C/.test(f.cls));
+      act.push(`In den letzten 7 Tagen: ${m.length ? `${m.length} M-/X-Flare${m.length > 1 ? 's' : ''} (stärkster ${m.sort((x, y) => (y.cls > x.cls ? 1 : -1))[0].cls})` : 'keine größeren Flares'}${c.length ? `, ${c.length} kleinere${c.length === 1 ? 'r C-Flare' : ' C-Flares'}` : ''}.`);
+    }
+    if (act.length) S.push({ h: 'Wie aktiv ist sie?', p: act.filter(Boolean).join(' ') });
+    const pos = positionPlain(r.location);
+    if (pos) S.push({ h: 'Wo liegt sie?', p: pos });
+    // Beobachtungstipp
+    const tip = [];
+    if (!spots) tip.push('Im Weißlicht ist hier nichts zu sehen – schalte auf Kalzium oder H-Alpha um.');
+    else {
+      if (r.spotClass[1] === 'h' || r.spotClass[1] === 'k') tip.push('Achte im Weißlicht auf den grauen, faserigen Hof (Penumbra) um die dunklen Kerne – bei ruhiger Luft zeigt er feine Strukturen.');
+      if (String(r.magClass).toUpperCase().includes('D')) tip.push('Wegen des δ-Magnetfelds lohnt sich ein Blick im H-Alpha-Licht: Hier können plötzlich helle Flares aufleuchten.');
+      if (pos && /W[6-9]\d|E[6-9]\d/.test(r.location)) tip.push('Nahe am Rand sind die hellen Fackeln im Weißlicht besonders gut zu sehen.');
+      if (!tip.length) tip.push('Gut geeignet, um die Entwicklung von Tag zu Tag zu fotografieren und zu vergleichen.');
+    }
+    S.push({ h: 'Beobachtungstipp', p: tip.join(' ') });
+    // Fazit
+    const sizeWord = !spots ? 'Ein fleckenfreies Fackelgebiet' : r.area >= 500 ? 'Eine sehr große' : r.area >= 200 ? 'Eine große' : r.area >= 50 ? 'Eine mittelgroße' : 'Eine kleine';
+    const magWord = String(r.magClass).toUpperCase().includes('D') ? ', magnetisch sehr verwickelte' : String(r.magClass).toUpperCase().includes('G') ? ', magnetisch verwickelte' : '';
+    const fazit = spots ? `${sizeWord}${magWord} Fleckengruppe – Flare-Risiko ${risk.label.toLowerCase()}.` : `${sizeWord} – nur im Kalzium- und H-Alpha-Licht sichtbar.`;
+    return { fazit, sections: S, risk };
+  }
+
   const GLOSSARY = [
     { k: 'AR 4566', t: 'Active Region (aktive Region)', d: 'Fortlaufende Nummer der US-Wetterbehörde NOAA für jedes Fleckengebiet. Kehrt eine Gruppe nach einer Sonnenumdrehung (≈ 27 Tage) zurück, bekommt sie eine neue Nummer.' },
     { k: 'Dsi, Ekc …', t: 'McIntosh-Klasse', d: 'Drei Buchstaben beschreiben das Aussehen einer Gruppe: 1. Buchstabe = Typ und Größe (A bis H), 2. = Hof des größten Flecks (x r s a h k), 3. = wie dicht die Flecken stehen (x o i c).' },
@@ -168,6 +227,6 @@
     { k: 'Seeing', t: 'Luftunruhe', d: 'Wie stark die Luft das Bild flimmern lässt, in Bogensekunden. Unter 2″ gut, über 3,5″ schlecht. Tagsüber vor allem durch aufgeheizten Boden.' },
   ];
 
-  const api = { Z, P, C, MW, magSymbol, decode, riskOf, describe, plainSummary, areaPlain, positionPlain, GLOSSARY, P_PLAIN, C_PLAIN, Z_PLAIN, MW_PLAIN };
+  const api = { regionStory, Z, P, C, MW, magSymbol, decode, riskOf, describe, plainSummary, areaPlain, positionPlain, GLOSSARY, P_PLAIN, C_PLAIN, Z_PLAIN, MW_PLAIN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SoluxMcIntosh = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -193,7 +193,9 @@
     const pct = (v) => (v == null ? '–' : `${v} %`);
     openPop(`
       <div class="hd"><div><span class="lbl">Aktive Region · NOAA-Nummer</span><h2>AR ${r.region}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
-      <div class="plain"><span class="lbl">Kurz gesagt</span><p>${esc(M.plainSummary(r.spotClass, r.magClass))}</p></div>
+      ${(() => { const fl = (state.flares || []).filter((f) => f.region === r.region); const st = M.regionStory(r, hist, fl, state.kind); return `<div class="plain"><span class="lbl">Kurz gesagt</span><p><b>${esc(st.fazit)}</b></p></div>
+      <div class="story">${st.sections.map((x) => `<h4>${esc(x.h)}</h4><p>${esc(x.p)}</p>`).join('')}</div>`; })()}
+      <details class="tech"><summary>Fachliche Details</summary><div class="techbody">
       ${r.spotClass ? `<div class="explain">
         <div class="codehead"><span class="code">${esc(r.spotClass)}</span><span class="note">McIntosh-Klasse: drei Buchstaben für Typ, Hof und Verteilung</span></div>
         <dl class="decode">${d.parts.map((p, i) => `<dt>${p.key}</dt><dd><b>${['Typ und Größe', 'Hof des größten Flecks', 'Wie dicht die Flecken stehen'][i]}</b><small>${esc(i === 0 ? M.Z_PLAIN[p.key] : i === 1 ? M.P_PLAIN[p.key] : M.C_PLAIN[p.key])}</small><small class="tech">Fachbegriff: ${esc(p.text)}</small></dd>`).join('')}</dl>
@@ -212,6 +214,7 @@
       </div>
       ${hist.length > 1 ? `<div><span class="lbl">Entwicklung der Fläche (rot = δ-Konfiguration)</span><div style="display:flex;gap:2px;height:50px;margin-top:6px">${bars}</div><div class="note" style="display:flex;justify-content:space-between"><span>${hist[0].day.slice(5)}</span><span>${hist[hist.length - 1].day.slice(5)}</span></div></div>` : ''}
       ${(() => { const fl = (state.flares || []).filter((f) => f.region === r.region && SW_rank(f.cls) >= 20).slice(0, 8); return fl.length ? `<div><span class="lbl">Flares der letzten 7 Tage</span><div class="flist">${fl.map((f) => `<span class="fl ${f.cls[0]}">${esc(f.cls)}<small>${fmt.utcDate(f.max).slice(0, 6)} ${new Date(f.max).toISOString().slice(11, 16)}</small></span>`).join('')}</div></div>` : '<p class="note">Keine Flares ab C2 in den letzten 7 Tagen.</p>'; })()}
+      </div></details>
       <button class="ghost" data-glossary style="align-self:flex-start">Alle Kürzel erklärt</button>
       <p class="note">Daten: NOAA SWPC. MH = millionstel Sonnenhälfte (eine Erdscheibe ≈ 42 MH).</p>`);
   }
@@ -342,11 +345,23 @@
     try {
       const n = await api.news();
       state.news = n;
-      $('#newsList').innerHTML = n.items.length ? n.items.map((i) => `<div class="news"><i class="${i.level}"></i><p>${esc(i.title)}<small>${esc(i.detail)}</small></p><time>${fmt.ago(i.time)}</time></div>`).join('') : '<p class="note">Keine aktuellen Meldungen.</p>';
+      $('#newsList').innerHTML = n.items.length ? n.items.map((i, k) => `<button class="news" data-news="${k}"><i class="${i.level}"></i><p>${esc(i.title)}<small>${esc(i.detail)}</small></p><time>${fmt.ago(i.time)}</time></button>`).join('') : '<p class="note">Keine aktuellen Meldungen.</p>';
       $('#newsMeta').textContent = n.updated ? 'Stand ' + fmt.hm.format(new Date(n.updated)) : '';
       $('#footInfo').textContent = `SN ${n.ssn ?? '–'} · F10.7 ${n.flux ?? '–'} · NASA SDO · NOAA SWPC · Open-Meteo`;
     } catch { /* offline */ }
   }
+
+  $('#newsList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-news]'); if (!b || !state.news) return;
+    const i = state.news.items[+b.dataset.news]; if (!i) return;
+    const st = window.SoluxSW ? window.SoluxSW.newsStory(i) : { sections: [{ h: 'Info', p: i.detail }] };
+    const reg = /AR (\d{4,5})/.exec(i.title + ' ' + i.detail);
+    openPop(`<div class="hd"><div><span class="lbl">Newsroom · ${fmt.ago(i.time)}</span><h2>${esc(i.title)}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
+      <div class="plain"><span class="lbl">Kurz gesagt</span><p>${esc(i.detail)}</p></div>
+      <div class="story">${st.sections.map((x) => `<h4>${esc(x.h)}</h4><p>${esc(x.p)}</p>`).join('')}</div>
+      ${reg && state.regions.some((r) => r.region === +reg[1]) ? `<button class="ghost" data-region="${reg[1]}" style="align-self:flex-start">Zur Region AR ${reg[1]}</button>` : ''}
+      <button class="ghost" data-glossary style="align-self:flex-start">Begriffe erklärt</button>`);
+  });
 
   /* ---------------- Popups ---------------- */
   function openPop(html) { $('#setPop').hidden = true; const p = $('#pop'); p.innerHTML = html; p.hidden = false; p.scrollTop = 0; }

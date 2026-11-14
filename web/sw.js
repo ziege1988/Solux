@@ -1,7 +1,7 @@
 /* Solux mobil – Service Worker: App-Dateien offline verfügbar, Daten immer frisch aus dem Netz. */
 const VERSION = 'solux-__BUILD__';
 const SHELL = ['./', 'index.html', 'push-config.js', 'base.css', 'widget.css', 'mobile.css', 'common.js', 'widget.js', 'api-web.js', 'pwa.js', 'manifest.webmanifest',
-  'shared/astro.js', 'shared/seeing.js', 'shared/mcintosh.js', 'shared/spaceweather.js', 'icons/apple-touch-icon.png', 'icons/icon-192.png'];
+  'shared/astro.js', 'shared/seeing.js', 'shared/mcintosh.js', 'shared/spaceweather.js', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'assets/splash-sun.jpg'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL))));
 self.addEventListener('activate', (e) => e.waitUntil(

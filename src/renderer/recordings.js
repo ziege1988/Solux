@@ -110,16 +110,31 @@
       st.src = cv;
       // Zeit bestimmen
       // Datum aus dem Dateinamen (EXIF ist nach der Bildbearbeitung nicht verlässlich)
-      st.nameDate = window.SoluxFileDate.parseNameDate(f.name);
-      st.time = null; st.timeUnknown = false;
-      // Wellenlänge aus Dateiname/Ordner erraten
-      if (/(^|[^a-z])(ca|cak|ca-k|calcium|kalzium|caii|393)([^a-z]|$)/i.test(f.path)) setMode('ca', false);
-      else if (/(weiss|weiß|wl|white|herschel|kontinuum)/i.test(f.path)) setMode('wl', false);
+      const nd = (st.nameDate = window.SoluxFileDate.parseNameDate(f.name));
+      st.time = null; st.timeUnknown = false; st.yearAuto = false;
+      // Wellenlänge: Dateiname/Ordner, sonst Bildfarbe (Kalziumbilder sind violett/blau eingefärbt)
+      let modeHint = '';
+      if (/(^|[^a-z])(ca|cak|ca-k|calcium|kalzium|caii|393)([^a-z]|$)/i.test(f.path)) { setMode('ca', false); modeHint = 'Dateiname'; }
+      else if (/(weiss|weiß|wl|white|herschel|kontinuum)/i.test(f.path)) { setMode('wl', false); modeHint = 'Dateiname'; }
+      else { setMode(guessModeByColor(cv), false); modeHint = 'Bildfarbe'; }
       $('#empty').hidden = true; $('#intakeBtn').disabled = false;
       st.imgType = 'auto';
+      st.scaleFull = scaleFromConfig();
       showCanvas(cv);
-      setState('wartet auf Einordnung');
-      if (await askIntake()) processImage(); else { setState('bereit'); logLine('Auswertung abgebrochen – über „Einordnung …“ jederzeit starten.', 'warn'); }
+      if (nd) {
+        // Datum im Dateinamen: ohne Rückfrage automatisch starten
+        const p2 = (n) => String(n).padStart(2, '0');
+        const t = nd.time ? `${p2(nd.time.hh)}:${p2(nd.time.mm)}:${p2(nd.time.ss)}` : '12:00:00';
+        st.time = new Date(`${nd.y}-${p2(nd.m)}-${p2(nd.d)}T${t}${nd.time && nd.time.utc ? 'Z' : ''}`);
+        st.timeUnknown = !nd.time; st.yearAuto = nd.yearGuessed;
+        st.timeSource = `Dateiname (${nd.text}${nd.yearGuessed ? ', Jahr wird automatisch bestimmt' : ''}${nd.time ? '' : ', Uhrzeit unbekannt → 12:00 Ortszeit'})`;
+        st.autoInfo = `▸ Automatischer Start  Datum aus dem Dateinamen · Wellenlänge aus ${modeHint}: ${MODE_LABEL[st.mode]} · Korrektur jederzeit über „Einordnung …“`;
+        $('#intakeInfo').textContent = `${nd.text}${nd.yearGuessed ? ' (Jahr?)' : ''} · ${MODE_LABEL[st.mode]}`;
+        processImage(true);
+      } else {
+        setState('wartet auf Einordnung');
+        if (await askIntake()) processImage(); else { setState('bereit'); logLine('Auswertung abgebrochen – über „Einordnung …“ jederzeit starten.', 'warn'); }
+      }
     } catch (e) {
       logLine(`Datei konnte nicht gelesen werden: ${esc(e.message)}`, 'err'); setState('Fehler');
     }
@@ -140,6 +155,26 @@
     if (cameraTime === 'utc') return { date: new Date(Date.UTC(y, mo - 1, d, h, mi, s)), source: 'EXIF (Kamera auf UTC)' };
     return { date: new Date(y, mo - 1, d, h, mi, s), source: 'EXIF (Kamera auf Ortszeit)' };
   }
+  /** Kalzium-Aufnahmen sind meist violett/blau eingefärbt, Weißlicht orange/gelb oder grau. */
+  function guessModeByColor(cv) {
+    const n = 64, t = document.createElement('canvas'); t.width = t.height = n;
+    const x = t.getContext('2d'); x.drawImage(cv, 0, 0, n, n);
+    const d = x.getImageData(0, 0, n, n).data; let r = 0, b = 0, cnt = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i] + d[i + 1] + d[i + 2] < 60) continue; r += d[i]; b += d[i + 2]; cnt++; }
+    return cnt && b > r * 1.08 ? 'ca' : 'wl';
+  }
+  function scaleFromConfig() {
+    const o = (st.cfg && st.cfg.recordings.optics) || {};
+    return o.focal > 0 && o.pixel > 0 ? (206.265 * o.pixel * (o.binning || 1)) / o.focal : null;
+  }
+  /** Referenzbild als Graustufen laden. */
+  async function refGray(refImg) {
+    const img = new Image(); await new Promise((r, j) => { img.onload = r; img.onerror = j; img.src = refImg.dataUrl; });
+    const rc = document.createElement('canvas'); rc.width = rc.height = refImg.size;
+    const rx = rc.getContext('2d', { willReadFrequently: true }); rx.drawImage(img, 0, 0);
+    return { gray: AL.toGray(rx.getImageData(0, 0, rc.width, rc.height).data, rc.width, rc.height), w: rc.width, h: rc.height, date: new Date(refImg.date), label: refImg.label };
+  }
+
   /* ---------------- Einordnung (Datum, Wellenlänge, Bildart, Maßstab) ---------------- */
   const pad2 = (n) => String(n).padStart(2, '0');
   function intakeScale() {
@@ -193,7 +228,7 @@
         if (!$('#inNoTime').checked && !$('#inTime').value) { $('#inSrc').innerHTML = '<b class="lv-bad">Bitte die Uhrzeit eintragen oder „Uhrzeit unbekannt“ anhaken.</b>'; return; }
         const t = readTime(z.value);
         if (!t || isNaN(t)) { $('#inSrc').innerHTML = '<b class="lv-bad">Datum oder Uhrzeit ist ungültig.</b>'; return; }
-        st.time = t; st.timeUnknown = $('#inNoTime').checked;
+        st.time = t; st.timeUnknown = $('#inNoTime').checked; st.yearAuto = false;
         st.timeSource = st.timeUnknown ? 'Datum bestätigt, Uhrzeit unbekannt (12:00 Ortszeit angenommen)' : nd ? 'Dateiname, im Dialog bestätigt' : 'im Dialog eingetragen';
         st.imgType = $('#inType').value;
         st.scaleFull = intakeScale();
@@ -288,6 +323,7 @@
     const alive = () => my === st.run;
     clearLog(); setState('arbeitet …'); $('#saveBtn').disabled = true; $('#manual').hidden = true; $('#saved').textContent = '';
     st.disc = null; st.align = null; st.groups = null; st.extra = [];
+    if (st.autoInfo) { logLine(st.autoInfo, 'hi'); st.autoInfo = null; }
     st.cfg = await api.getConfig(); updateProfileInfo();
     const f = st.file, src = st.src, prof = st.cfg.profiles[st.mode];
     try {
@@ -327,6 +363,28 @@
         if (!scaleWork) throw new Error('Für Oberflächenbilder wird der Bildmaßstab benötigt – bitte unter „Einordnung …“ Brennweite und Pixelgröße eintragen.');
       }
 
+      // Jahr fehlt im Dateinamen: gegen SDO-Bilder der letzten drei Jahre prüfen
+      if (st.yearAuto && cls.type !== 'surface') {
+        logLine('▸ Jahr fehlt im Dateinamen – Abgleich mit SDO-Bildern der letzten drei Jahre …');
+        let best = null;
+        for (let dy = 0; dy < 3; dy++) {
+          const t = new Date(st.time); t.setFullYear(st.time.getFullYear() - dy);
+          try {
+            const rg = await refGray(await api.sunImage(st.mode, t.toISOString()));
+            if (!alive()) return;
+            const r = await compute('align', { user: { gray: gray.slice(), w: wc.width, h: wc.height }, ref: { gray: rg.gray, w: rg.w, h: rg.h }, mode: st.mode, opts: { knownFlip: prof.flip, disc: dWork } });
+            const score = r.ncc * Math.min(3, r.ratio);
+            logLine(`  ${t.getFullYear()}: Übereinstimmung ${(r.ncc * 100).toFixed(0)} % · Eindeutigkeit ×${r.ratio.toFixed(1)}`);
+            if (!best || score > best.score) best = { t, score, r };
+          } catch (e) { logLine(`  ${t.getFullYear()}: kein Referenzbild (${esc(e.message)})`, 'warn'); }
+        }
+        if (best) {
+          st.time = best.t; st.yearAuto = false;
+          logLine(`  ✓ Jahr ${best.t.getFullYear()} passt am besten${best.r.ok ? '' : ' (aber nicht eindeutig – bitte prüfen)'}`, best.r.ok ? 'ok' : 'warn');
+          $('#intakeInfo').textContent = `${fmt.dateShort.format(st.time)}${st.timeUnknown ? ' (Uhrzeit unbekannt)' : ''} · ${MODE_LABEL[st.mode]}`;
+        }
+      } else if (st.yearAuto) logLine('  ! Jahr fehlt im Dateinamen – bei Oberflächenbildern bitte über „Einordnung …“ bestätigen.', 'warn');
+
       // Ephemeriden
       const { lat, lon, mount } = st.cfg.location;
       const o = A.solarOrientation(st.time), pos = A.sunAltAz(st.time, lat, lon), q = A.parallacticAngle(st.time, lat, lon);
@@ -342,10 +400,7 @@
       overlay(dWork ? sweepAnim(dWork, 1) : scanAnim(wc.width, wc.height));
       const [refImg, reg] = await Promise.all([api.sunImage(refKind, st.time.toISOString(), refSize), api.regions(st.time.toISOString())]);
       if (!alive()) return;
-      const img = new Image(); await new Promise((r, j) => { img.onload = r; img.onerror = j; img.src = refImg.dataUrl; });
-      const rc = document.createElement('canvas'); rc.width = rc.height = refImg.size;
-      const rx = rc.getContext('2d', { willReadFrequently: true }); rx.drawImage(img, 0, 0);
-      st.ref = { gray: AL.toGray(rx.getImageData(0, 0, rc.width, rc.height).data, rc.width, rc.height), w: rc.width, h: rc.height, date: new Date(refImg.date), label: refImg.label };
+      st.ref = await refGray(refImg);
       const dtMin = Math.round((st.ref.date - st.time) / 60000);
       logLine(`  ✓ ${refImg.label}  ${st.ref.date.toISOString().slice(0, 16).replace('T', ' ')} UTC  (Δt ${dtMin >= 0 ? '+' : ''}${dtMin} min)`, Math.abs(dtMin) > 180 ? 'warn' : 'ok');
       st.regions = reg.regions || []; st.regionsDay = reg.day;

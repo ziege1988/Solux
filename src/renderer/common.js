@@ -40,6 +40,32 @@
     ctx.fillText(text, c + W * 0.009, c + W * 0.005); ctx.shadowBlur = 0;
   }
 
+  /** Startbild: eigene Kalziumaufnahme mit Schriftzug „SOLUX“. Fällt auf die gezeichnete Sonne zurück. */
+  function drawSplash(cv, src = 'assets/splash-sun.jpg') {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const x = cv.getContext('2d'), W = cv.width, c = W / 2;
+        x.clearRect(0, 0, W, W);
+        x.save(); x.beginPath(); x.arc(c, c, W / 2, 0, 7); x.clip();
+        x.fillStyle = '#000'; x.fillRect(0, 0, W, W); x.drawImage(img, 0, 0, W, W);
+        // weicher Abschluss zum Rand
+        const g = x.createRadialGradient(c, c, W * 0.43, c, c, W * 0.5); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+        x.fillStyle = g; x.fillRect(0, 0, W, W);
+        x.restore();
+        x.font = `800 ${W * 0.105}px -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif`;
+        x.textAlign = 'center'; x.textBaseline = 'middle';
+        if ('letterSpacing' in x) x.letterSpacing = `${W * 0.018}px`;
+        x.shadowColor = 'rgba(40,10,90,.9)'; x.shadowBlur = W * 0.04; x.fillStyle = 'rgba(255,255,255,.96)';
+        x.fillText('SOLUX', c + W * 0.009, c + W * 0.005);
+        x.shadowColor = 'rgba(190,150,255,.9)'; x.shadowBlur = W * 0.02; x.fillText('SOLUX', c + W * 0.009, c + W * 0.005);
+        x.shadowBlur = 0; resolve(true);
+      };
+      img.onerror = () => { drawHalpha(cv); resolve(false); };
+      img.src = src;
+    });
+  }
+
   /**
    * Färbt ein SDO-Bild ein: Weißlicht warm (mit Randverdunkelung zur natürlichen Darstellung),
    * Kalzium violett (wie Ca-K-Aufnahmen üblich dargestellt).
@@ -153,5 +179,5 @@
 
   function arName(num) { return `AR ${num}`; }
 
-  root.SoluxUI = { rng, drawHalpha, colorizeSun, tintSun, fmt, esc, arName, D2R };
+  root.SoluxUI = { rng, drawHalpha, drawSplash, colorizeSun, tintSun, fmt, esc, arName, D2R };
 })(window);

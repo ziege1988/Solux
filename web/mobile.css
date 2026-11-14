@@ -74,3 +74,5 @@ body { -webkit-text-size-adjust: 100%; }
 .helpbtn { width: 40px; height: 40px; font-size: 17px; }
 .gloss dd, .plain p { font-size: 14px; }
 .probs b { font-size: 17px; }
+.story p { font-size: 14.5px; }
+.story h4 { font-size: 14px; }

@@ -1,1 +1,1 @@
-SoluxUI.drawHalpha(document.getElementById('cv'));
+SoluxUI.drawSplash(document.getElementById('cv'));

@@ -262,6 +262,39 @@
     return { level, title: `${kinds[kindEn] || kindEn}: ${title}`, detail: text };
   }
 
+  /** Verständliche Erklärung zu einer Newsroom-Meldung: { title, sections: [{h, p}] } */
+  function newsStory(i) {
+    const S = [];
+    if (i.kind === 'flare') {
+      const cls = (i.cls || i.title.replace(/^.*?([ABCMX]\d+(?:\.\d+)?).*$/, '$1')).trim(), L = cls[0];
+      S.push({ h: 'Was ist passiert?', p: `Auf der Sonne gab es einen Flare – einen plötzlichen Strahlungsausbruch, bei dem sich verdrehte Magnetfelder schlagartig entladen. Er dauert meist nur Minuten bis eine Stunde.` });
+      S.push({ h: `Wie stark war ${cls}?`, p: L === 'X' ? 'X ist die stärkste Klasse. Solche Flares sind selten und können auf der Tagseite der Erde den Kurzwellenfunk weiträumig stören. Oft folgt ein Auswurf von Sonnenmaterie (CME).' : L === 'M' ? 'M ist die mittlere Klasse (10× schwächer als X). Auf der Tagseite der Erde kann Kurzwellenfunk kurz gestört werden. Ab etwa M5 gilt ein Flare als stark.' : 'C ist eine kleine Klasse – für die Erde ohne Folgen, aber im H-Alpha-Licht als kurzes Aufhellen sichtbar.' });
+      S.push({ h: 'Was bedeutet das für mich?', p: L === 'X' || L === 'M' ? 'Für dich am Boden ungefährlich. Interessant: Der Flare ist im H-Alpha-Licht als helles Aufleuchten in der Region zu sehen. Falls ein Massenauswurf die Erde trifft, sind 1–3 Tage später Polarlichter möglich – Solux meldet das.' : 'Keine Auswirkungen – ein Zeichen, dass die Region aktiv ist.' });
+    } else if (i.kind === 'aurora') {
+      S.push({ h: 'Was heißt das?', p: 'Das Erdmagnetfeld ist (bald) so stark gestört, dass Polarlichter bis nach Mitteleuropa reichen können. Auslöser sind meist Wolken aus Sonnenmaterie (CME) oder schneller Sonnenwind.' });
+      S.push({ h: 'Wie sehe ich sie?', p: 'Bei klarem, dunklem Himmel nach Norden schauen, am besten zwischen 22 und 2 Uhr und abseits von Straßenlicht. Mit bloßem Auge oft nur als fahler Schimmer – eine Handykamera im Nachtmodus zeigt die Farben deutlich.' });
+      S.push({ h: 'Wie sicher ist das?', p: 'Der Kp-Wert ist eine Vorhersage für 3-Stunden-Abschnitte. Die tatsächliche Stärke kann abweichen – es lohnt sich, mehrmals rauszuschauen.' });
+    } else if (i.kind === 'kp') {
+      S.push({ h: 'Was heißt das?', p: 'Der Kp-Index misst die Unruhe des Erdmagnetfelds von 0 (ruhig) bis 9 (extremer Sturm). ' + (i.level === 'ok' ? 'Gerade ist es ruhig – keine Polarlichter in Mitteleuropa zu erwarten.' : 'Ein geomagnetischer Sturm ist möglich; an deinem Standort reicht es für Polarlichter aber voraussichtlich noch nicht.') });
+    } else if (i.kind === 'region') {
+      S.push({ h: 'Was ist passiert?', p: `${i.title.replace('Neue Region ', '')} hat eine neue Nummer bekommen. ${/E[6-9]\d/.test(i.detail) ? 'Sie ist am Ostrand ins Blickfeld gedreht – die Sonne dreht sich in etwa 27 Tagen einmal um sich selbst.' : 'Sie ist mitten auf der Scheibe neu entstanden – ein Zeichen frischer magnetischer Aktivität.'}` });
+      S.push({ h: 'Lohnt sich ein Blick?', p: 'Neue Regionen verändern sich oft schnell. Ein Foto heute und in ein paar Tagen zeigt schön, wie Flecken wachsen oder zerfallen.' });
+    } else if (i.kind === 'alert') {
+      const d = i.detail || '';
+      let what = 'Das US-Weltraumwetterzentrum (NOAA SWPC) hat eine Meldung herausgegeben.';
+      if (/Electron 2MeV/i.test(d)) what = 'Viele schnelle Elektronen im Strahlungsgürtel der Erde. Das betrifft nur Satelliten (Aufladung), nicht die Beobachtung am Boden.';
+      else if (/K-index|Geomagnetic Storm/i.test(d)) what = 'Das Erdmagnetfeld ist gestört oder wird es bald sein. Je höher Kp bzw. die G-Stufe, desto eher sind Polarlichter möglich.';
+      else if (/Proton/i.test(d)) what = 'Energiereiche Protonen von der Sonne erreichen die Erde – relevant für Raumfahrt, Satelliten und Polarflüge, nicht für Beobachter am Boden.';
+      else if (/Type II/i.test(d)) what = 'Ein Radioburst vom Typ II zeigt eine Stoßwelle in der Sonnenkorona – meist ein Zeichen für einen Massenauswurf (CME).';
+      else if (/Type IV/i.test(d)) what = 'Ein Radioburst vom Typ IV begleitet oft große Flares mit Massenauswurf.';
+      else if (/X-ray Flux/i.test(d)) what = 'Die Röntgenstrahlung der Sonne ist stark angestiegen – ein großer Flare läuft.';
+      else if (/Sudden Impulse/i.test(d)) what = 'Eine Stoßwelle im Sonnenwind ist an der Erde angekommen – oft der Beginn eines geomagnetischen Sturms.';
+      S.push({ h: 'Was bedeutet das?', p: what });
+      S.push({ h: 'Originalmeldung', p: d });
+    } else S.push({ h: 'Info', p: i.detail || '' });
+    return { title: i.title, sections: S };
+  }
+
   /**
    * Push-Mitteilungen bestimmen (gemeinsam für Mac und Handy).
    * mode: 'alle' | 'interessant' | 'aus'. Schlüssel enthalten das Datum, damit jede Region/Meldung
@@ -300,6 +333,6 @@
     return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
   }
 
-  const api = { pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
+  const api = { newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);
