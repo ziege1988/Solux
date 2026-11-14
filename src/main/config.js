@@ -7,7 +7,7 @@ const DEFAULTS = {
   widget: { x: null, y: null, alwaysOnTop: false, opacity: 1, scale: 1, showSplash: true, kind: 'wl', visible: true },
   general: { openAtLogin: true },
   data: { refreshMinutes: 15 },
-  recordings: { export: { text: 'list', scale: 'none', labels: true, grid: true, flares: false, proms: true, format: 'jpeg', quality: 95, txt: true }, lastMode: 'wl', folder: null, diary: true },
+  recordings: { export: { text: 'list', scale: 'none', labels: true, grid: true, flares: false, flaresHa: true, proms: true, format: 'jpeg', quality: 95, txt: true }, lastMode: 'wl', folder: null, diary: true },
   // Ausrüstung je Wellenlänge: Bildmaßstab (Brennweite inkl. Barlow, Pixelgröße, Binning) und gelernte Ausrichtung
   profiles: {
     wl: { name: 'Refraktor + Herschelkeil (Weißlicht)', flip: null, sigma: 1, history: [], optics: { focal: null, pixel: null, binning: 1 } },

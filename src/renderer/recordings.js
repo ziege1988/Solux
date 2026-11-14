@@ -14,6 +14,22 @@
   const chromo = () => st.mode !== 'wl'; // Kalzium und H-Alpha: Plages sichtbar, dunkle Strukturen sind nicht nur Flecken
   const num = (v, d = 1) => v.toFixed(d).replace('.', ',');
   const kmFmt = (km) => (Math.round(km / 1000) * 1000).toLocaleString('de-DE');
+  /** Flare-Markierung: bei H-Alpha eigene Einstellung (Standard an), sonst wie gewählt (Standard aus). */
+  const flaresOn = (opt) => (st.mode === 'ha' ? (opt.flaresHa ?? true) !== false : !!opt.flares);
+  const flareKey = () => (st.mode === 'ha' ? 'flaresHa' : 'flares');
+  const flareRank = (cls) => { const m = /^([ABCMX])(\d+(?:\.\d+)?)/.exec(cls || ''); return m ? 'ABCMX'.indexOf(m[1]) * 10 + parseFloat(m[2]) : 0; };
+  /** C-, M- und X-Flares ±12 h um die Aufnahme, stärkste zuerst; null = keine Flare-Daten für diesen Zeitraum. */
+  function dayFlareList() {
+    const all = st.dayFlares || [];
+    const covered = all.some((f) => f.max <= st.time.getTime() - 12 * 3600000) || Date.now() - st.time < 30 * 86400000;
+    const list = all.filter((f) => Math.abs(f.max - st.time) < 12 * 3600000 && /^[CMX]/.test(f.cls)).sort((a, b) => flareRank(b.cls) - flareRank(a.cls));
+    return list.length || covered ? list : null;
+  }
+  function flareWhen(f) {
+    const d = Math.round((f.max - st.time) / 60000), a = Math.abs(d);
+    const rel = a < 90 ? `${a} min` : `${num(a / 60)} h`;
+    return `${new Date(f.max).toISOString().slice(11, 16)} UTC (${d >= 0 ? rel + ' nach' : rel + ' vor'} der Aufnahme)`;
+  }
   const TYPE_LABEL = { full: 'ganze Sonne', partial: 'Ausschnitt mit Sonnenrand', surface: 'Oberfläche ohne Rand' };
 
   const st = {
@@ -54,7 +70,7 @@
   async function init() {
     st.cfg = await api.getConfig();
     setMode(st.cfg.recordings.lastMode || 'wl', false);
-    st.exp = { text: 'list', scale: 'none', labels: true, grid: true, flares: false, proms: true, format: 'jpeg', quality: 95, txt: true, ...(st.cfg.recordings.export || {}) };
+    st.exp = { text: 'list', scale: 'none', labels: true, grid: true, flares: false, flaresHa: true, proms: true, format: 'jpeg', quality: 95, txt: true, ...(st.cfg.recordings.export || {}) };
     syncOptBar();
     updateProfileInfo();
   }
@@ -712,12 +728,13 @@
       } else { drawCompass(x, fs, mono); drawScaleBar(x, geom, fs, mono); }
       if (opt.proms !== false && st.mode === 'ha' && st.proms && st.proms.length) drawProms(x, geom, fs);
       if (opt.labels !== false) drawLabels(x, geom, fs, mono, accent);
-      if (opt.flares) drawDayFlares(x, geom, fs, mono);
+      if (flaresOn(opt)) drawDayFlares(x, geom, fs, mono);
     }
     x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = '#b9b5ad'; x.font = `500 ${Math.round(fs * 0.85)}px ${mono}`;
     x.fillText(`${fmt.utcDate(st.time)} ${st.time.toISOString().slice(11, 16)} UTC · ${MODE_LABEL[st.mode]}`, fs * 0.8, H - fs * 0.9);
     x.textAlign = 'right'; x.fillStyle = '#6f6a63';
     x.fillText(al.method === 'none' ? 'nicht ausgerichtet' : 'N oben · O links · Solux', W - fs * 0.8, H - fs * 0.9);
+    st.curOpt = opt;
     if (L) drawLegend(x, W, H, L, fs, mono, accent, textMode);
     cv.__geom = geom;
     return cv;
@@ -845,13 +862,17 @@
 
   /** Flares des Aufnahmetags (±12 h) an ihren Regionen markieren. */
   function drawDayFlares(x, g, fs, mono) {
-    const list = (st.dayFlares || []).filter((f) => Math.abs(f.max - st.time) < 12 * 3600000 && /^[CMX]/.test(f.cls));
-    for (const f of list) {
+    // je Region nur der stärkste Flare (sonst liegen die Markierungen übereinander), dazu die Zahl der weiteren
+    const byReg = new Map();
+    for (const f of dayFlareList() || []) { if (!f.region) continue; const e = byReg.get(f.region); if (!e) byReg.set(f.region, { f, more: 0 }); else e.more++; }
+    for (const { f, more } of byReg.values()) {
       const grp = st.groups && st.groups.find((q) => q.region.region === f.region); if (!grp) continue;
       const px = g.cx + grp.x * g.r, py = g.cy - grp.y * g.r, rr = fs * (f.cls[0] === 'X' ? 1.3 : f.cls[0] === 'M' ? 1 : 0.7);
       x.save(); x.translate(px - fs * 1.6, py - fs * 1.2); x.strokeStyle = f.cls[0] === 'X' ? '#ff4d4d' : f.cls[0] === 'M' ? '#ff9a3c' : '#ffe08a'; x.lineWidth = Math.max(1.5, fs * 0.12);
       x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, r1 = k % 2 ? rr * 0.45 : rr; x.moveTo(0, 0); x.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); } x.stroke();
-      x.font = `700 ${Math.round(fs * 0.75)}px ${mono}`; x.fillStyle = x.strokeStyle; x.textAlign = 'right'; x.textBaseline = 'middle'; x.fillText(f.cls, -rr - fs * 0.2, 0);
+      x.font = `700 ${Math.round(fs * 0.75)}px ${mono}`; x.fillStyle = x.strokeStyle; x.textAlign = 'right'; x.textBaseline = 'middle';
+      const lbl = more ? `${f.cls} +${more}` : f.cls;
+      x.lineWidth = Math.max(2, fs * 0.2); x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText(lbl, -rr - fs * 0.2, 0); x.fillText(lbl, -rr - fs * 0.2, 0);
       x.restore();
     }
   }
@@ -968,6 +989,18 @@
       lines.push(['m', [earths, r.location, r.numberSpots ? `${r.numberSpots} Flecken` : ''].filter(Boolean).join(' · ')]);
       lines.push(['g', '']);
     }
+    if (st.curOpt && flaresOn(st.curOpt)) {
+      const fl = dayFlareList();
+      if (fl && fl.length) {
+        const f = fl[0], big = /^X/.test(f.cls) ? 'ein starker X-Flare' : /^M/.test(f.cls) ? 'ein mittelstarker M-Flare' : 'ein kleiner C-Flare';
+        lines.push(['s', 'Flares']);
+        const n = (c) => fl.filter((q) => q.cls[0] === c).length;
+        const parts = [['X', n('X')], ['M', n('M')], ['C', n('C')]].filter(([, k]) => k).map(([c, k]) => `${k} ${c}`);
+        const cnt = parts.length > 1 ? parts.slice(0, -1).map((q) => q + '-').join(', ') + ' und ' + parts[parts.length - 1] + '-Flares' : parts[0] + '-Flare' + (fl.length > 1 ? 's' : '');
+        lines.push(['p', `In den 12 Stunden vor und nach der Aufnahme gab es ${fl.length === 1 ? 'einen ' + fl[0].cls[0] + '-Flare' : cnt}. Der stärkste war ${big} (${f.cls})${f.region ? ' aus AR ' + f.region : ''} um ${flareWhen(f)}.`]);
+        lines.push(['g', '']);
+      } else if (fl) { lines.push(['s', 'Flares']); lines.push(['p', 'In den 12 Stunden vor und nach der Aufnahme gab es keinen nennenswerten Flare.']); lines.push(['g', '']); }
+    }
     if (st.proms && st.proms.length) {
       const p = st.proms.slice().sort((a, b) => b.km - a.km)[0];
       lines.push(['s', 'Protuberanzen']);
@@ -1006,6 +1039,14 @@
       }
       if (st.extra.length) lines.push(['m', `${st.extra.length} Gruppe(n) ohne NOAA-Nummer („neu?“)`]);
     } else if (al.method !== 'none') lines.push(['m', 'Keine nummerierten Regionen sichtbar.']);
+    if (st.curOpt && flaresOn(st.curOpt)) {
+      const fl = dayFlareList();
+      lines.push(['g', '']); lines.push(['s', 'Flares ±12 h']);
+      if (!fl) lines.push(['m', 'Keine Flare-Daten für diesen Tag']);
+      else if (!fl.length) lines.push(['m', 'Keine C-, M- oder X-Flares']);
+      for (const f of (fl || []).slice(0, 5)) lines.push(['a', `${f.cls.padEnd(5)} ${new Date(f.max).toISOString().slice(11, 16)} UTC  ${f.region ? 'AR ' + f.region : 'ohne Region'}`]);
+      if (fl && fl.length > 5) lines.push(['m', `… und ${fl.length - 5} weitere`]);
+    }
     if (st.proms && st.proms.length) {
       lines.push(['g', '']); lines.push(['s', 'Protuberanzen']);
       for (const p of st.proms.slice(0, 5)) lines.push(['a', `${p.pa != null ? 'PA ' + String(Math.round(p.pa)).padStart(3) + '°' : 'Bild ' + Math.round((p.angle * 180) / Math.PI) + '°'}  ${kmFmt(p.km).padStart(7)} km${p.lat != null ? `  ${Math.abs(Math.round(p.lat))}° ${p.lat >= 0 ? 'N' : 'S'}` : ''}`]);
@@ -1099,6 +1140,15 @@
         L.push('');
       }
     } else L.push('Keine Regionsbeschriftung (Bild nicht ausgerichtet).');
+    {
+      const fl = dayFlareList();
+      L.push('');
+      L.push('FLARES ±12 h UM DIE AUFNAHME (NOAA SWPC, GOES-Röntgen)');
+      L.push('-'.repeat(60));
+      if (!fl) L.push('   keine Flare-Daten für diesen Zeitraum (Solux speichert Flares 60 Tage)');
+      else if (!fl.length) L.push('   keine C-, M- oder X-Flares');
+      for (const f of fl || []) L.push(`   ${f.cls.padEnd(5)} Maximum ${flareWhen(f)}${f.region ? ` · AR ${f.region}` : ' · ohne Region'}${f.location ? ` (${f.location})` : ''}${f.optical ? ` · optisch ${f.optical}` : ''}`);
+    }
     if (st.mode === 'ha' && st.proms) {
       L.push('');
       L.push(`PROTUBERANZEN  ·  ${Math.round((st.promCoverage || 0) * 100)} % des Sonnenrands im Bild`);
@@ -1126,7 +1176,7 @@
   function openExport() {
     const e = st.exp;
     setSeg('exText', e.text); setSeg('exScale', e.scale); setSeg('exFormat', e.format); setSeg('exQ', e.quality);
-    $('#exLabels').checked = e.labels !== false; $('#exGrid').checked = !!e.grid; $('#exFlares').checked = !!e.flares; $('#exTxt').checked = e.txt !== false; $('#exProms').checked = e.proms !== false;
+    $('#exLabels').checked = e.labels !== false; $('#exGrid').checked = !!e.grid; $('#exFlares').checked = flaresOn(e); $('#exTxt').checked = e.txt !== false; $('#exProms').checked = e.proms !== false;
     $('#exPromsRow').hidden = st.mode !== 'ha';
     $('#exScale').style.opacity = st.type === 'full' ? 1 : 0.4;
     updateExportPreview();
@@ -1134,7 +1184,7 @@
   }
   const exSeg = (id, key, num) => $(id).addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (!b) return; setExp({ [key]: num ? +b.dataset.v : b.dataset.v }); setSeg(id.slice(1), num ? +b.dataset.v : b.dataset.v); updateExportPreview(); });
   exSeg('#exText', 'text'); exSeg('#exScale', 'scale'); exSeg('#exFormat', 'format'); exSeg('#exQ', 'quality', true);
-  [['#exLabels', 'labels'], ['#exGrid', 'grid'], ['#exFlares', 'flares'], ['#exTxt', 'txt'], ['#exProms', 'proms']].forEach(([id, key]) => $(id).addEventListener('change', () => { setExp({ [key]: $(id).checked }); updateExportPreview(); }));
+  [['#exLabels', 'labels'], ['#exGrid', 'grid'], ['#exFlares', null], ['#exTxt', 'txt'], ['#exProms', 'proms']].forEach(([id, key]) => $(id).addEventListener('change', () => { setExp({ [key || flareKey()]: $(id).checked }); updateExportPreview(); }));
   $('#exCancel').addEventListener('click', () => ($('#exportDlg').hidden = true));
   $('#exFolderBtn').addEventListener('click', async () => { const f = await api.rec.chooseFolder(); if (f) { st.cfg.recordings.folder = f; updateExportPreview(); } });
   $('#saveBtn').addEventListener('click', openExport);
@@ -1168,7 +1218,7 @@
   /** Ausgewertete Aufnahme ins Tagebuch: Vorschaubild, ausgerichtete Fassung (Norden oben) und Messwerte. */
   async function saveDiary() {
     const w = st.work;
-    const cv = renderOutput(w.canvas, w.disc, { text: 'none', scale: 'none', labels: false, grid: false, flares: false, proms: false }, w.k);
+    const cv = renderOutput(w.canvas, w.disc, { text: 'none', scale: 'none', labels: false, grid: false, flares: false, flaresHa: false, proms: false }, w.k);
     const g = cv.__geom;
     const resize = (c, m) => { const f = Math.min(1, m / Math.max(c.width, c.height)); const o = document.createElement('canvas'); o.width = Math.round(c.width * f); o.height = Math.round(c.height * f); const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, 0, 0, o.width, o.height); return o; };
     const jpg = async (c, q) => (await new Promise((r) => c.toBlob(r, 'image/jpeg', q))).arrayBuffer();
