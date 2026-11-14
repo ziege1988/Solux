@@ -39,8 +39,11 @@ jobs:
             V="$(node -p "require('./package.json').version")"
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
-      - name: App bauen (Apple Silicon + Intel)
-        run: npx electron-builder --mac zip dmg --arm64 --x64 --publish never
+      # nacheinander, damit sich die DMG-Laufwerke nicht in die Quere kommen
+      - name: App bauen (Apple Silicon)
+        run: npx electron-builder --mac zip dmg --arm64 --publish never
+      - name: App bauen (Intel)
+        run: npx electron-builder --mac zip dmg --x64 --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: Solux-mac
