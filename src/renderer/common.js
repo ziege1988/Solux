@@ -78,6 +78,33 @@
     return cv;
   }
 
+  /**
+   * Einfärben ohne Pixelzugriff (für Bilder fremder Server ohne CORS, z. B. auf dem Handy):
+   * Graustufen per Sättigungs-Mischung, Farbton per Farb-Mischung, Randverdunkelung per Multiplikation.
+   */
+  function tintSun(img, kind, size, radiusPx) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = size;
+    const x = cv.getContext('2d'), c = size / 2, R = radiusPx * (size / 1024);
+    x.drawImage(img, 0, 0, size, size);
+    x.globalCompositeOperation = 'saturation'; x.fillStyle = '#808080'; x.fillRect(0, 0, size, size);
+    if (kind === 'ca') {
+      // Kontrast anheben (v² · 4): Netzwerk und Plages treten hervor, Hintergrund bleibt dunkel
+      x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
+      x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0); x.drawImage(cv, 0, 0);
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#cfa8ff'; x.fillRect(0, 0, size, size);
+    }
+    else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
+    if (kind !== 'ca') {
+      const g = x.createRadialGradient(c, c, 0, c, c, R);
+      for (let i = 0; i <= 12; i++) { const r = i / 12, mu = Math.sqrt(Math.max(0, 1 - r * r)), ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2, v = Math.round(255 * ld); g.addColorStop(r, `rgb(${v},${v},${v})`); }
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = g; x.fillRect(0, 0, size, size);
+    }
+    x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, 7); x.fill();
+    x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
+    x.globalCompositeOperation = 'source-over';
+    return cv;
+  }
+
   const fmt = {
     date: new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }),
     dateShort: new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -93,5 +120,5 @@
 
   function arName(num) { return `AR ${num}`; }
 
-  root.SoluxUI = { rng, drawHalpha, colorizeSun, fmt, esc, arName, D2R };
+  root.SoluxUI = { rng, drawHalpha, colorizeSun, tintSun, fmt, esc, arName, D2R };
 })(window);

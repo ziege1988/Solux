@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://api.helioviewer.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://api.helioviewer.org; connect-src 'self' https://services.swpc.noaa.gov https://api.open-meteo.com https://geocoding-api.open-meteo.com; manifest-src 'self'; worker-src 'self'">
+<title>Solux</title>
+<meta name="description" content="Aktuelle Sonne im Weißlicht und Kalziumlicht mit Beobachtungsbedingungen.">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Solux">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="widget.css">
+<link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+<div class="widget" id="widget">
+  <div class="w-top">
+    <span class="brand">Solux</span>
+    <button class="tab on" id="tabSun" hidden>Sonne</button>
+    <button class="tab" id="tabRec" hidden>Aufnahmen</button>
+    <span class="grip"></span>
+    <button class="xbtn" id="quitBtn" hidden aria-label="Beenden">×</button>
+  </div>
+
+  <div class="w-hero">
+    <div class="sunbox">
+      <canvas id="sunCv" width="560" height="560" aria-label="Aktuelle Sonne"></canvas>
+      <span class="compass n">N</span><span class="compass e">O</span>
+      <div class="sunload" id="sunLoad">Lade Sonnenbild …</div>
+      <div class="seg kindseg" id="kindSeg" role="group" aria-label="Wellenlänge">
+        <button data-k="wl">Weißlicht</button><button data-k="ca">Kalzium</button>
+      </div>
+    </div>
+    <aside class="side">
+      <span class="lbl">Aufnahme</span>
+      <span class="cap-date" id="capDate">–</span>
+      <span class="cap-time" id="capTime">–</span>
+      <span class="cap-src" id="capSrc">–</span>
+      <span class="lbl" id="arHead">Fleckengruppen</span>
+      <ul class="arlist" id="arList"></ul>
+      <div class="ephem mono" id="ephem"></div>
+    </aside>
+  </div>
+
+  <div class="w-now"><span class="d" id="nowDate"></span><span class="t mono" id="nowTime"></span></div>
+  <div class="w-graph"><svg id="altSvg" viewBox="0 0 420 140" role="img" aria-label="Sonnenhöhe heute"></svg></div>
+  <div class="season" id="season"></div>
+
+  <div class="w-status">
+    <button class="st off" id="stWeather" data-k="weather"><b>Wetter</b><small>–</small></button>
+    <button class="st off" id="stSeeing" data-k="seeing"><b>Seeing</b><small>–</small></button>
+    <button class="st off" id="stWind" data-k="wind"><b>Wind</b><small>–</small></button>
+  </div>
+
+  <div class="w-news">
+    <div class="head"><h3>Newsroom</h3><span class="note" id="newsMeta"></span></div>
+    <div class="newslist" id="newsList"><p class="note">Lade Meldungen …</p></div>
+  </div>
+
+  <div class="w-foot">
+    <span class="note" id="footInfo">NASA SDO · NOAA SWPC · Open-Meteo</span>
+    <span class="upd-dot" id="updDot" hidden></span>
+    <button class="gear" id="gearBtn" aria-label="Einstellungen" title="Einstellungen">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+
+  <div class="pop" id="pop" hidden></div>
+  <div class="pop settings" id="setPop" hidden>
+    <nav id="setNav">
+      <button data-s="ort">Standort</button>
+      <button data-s="daten">Daten</button>
+    </nav>
+    <div class="body" id="setBody"></div>
+  </div>
+</div>
+
+<div class="splash" id="splash"><canvas id="splashCv" width="760" height="760"></canvas></div>
+
+<script src="shared/astro.js"></script>
+<script src="shared/seeing.js"></script>
+<script src="shared/mcintosh.js"></script>
+<script src="shared/spaceweather.js"></script>
+<script src="common.js"></script>
+<script src="api-web.js"></script>
+<script src="pwa.js"></script>
+<script src="widget.js"></script>
+</body>
+</html>

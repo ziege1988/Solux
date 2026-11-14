@@ -33,6 +33,23 @@ beschriftet und mit Legende und Textdatei gespeichert.
 - **Speichern**: JPEG in einstellbarer Qualität (Standard 95 %) plus Textdatei. Die Legende am rechten
   Bildrand lässt sich per Haken an- oder abwählen.
 
+## Solux mobil (iPhone)
+
+Die Hauptseite „Sonne“ gibt es zusätzlich als Web-App fürs Handy, ohne Aufnahmen-Teil:
+**https://ziege1988.github.io/Solux/**
+
+- Gleicher Code wie das Mac-Widget (`src/shared`, `src/renderer/widget.*`), eigene Datenanbindung im
+  Browser (`web/api-web.js`)
+- Daten direkt von NOAA SWPC, Open-Meteo und Helioviewer, ohne eigenen Server
+- Standort und Seeing-Bewertungen bleiben auf dem Handy (lokaler Speicher)
+- Wird bei jeder Änderung automatisch über GitHub Pages veröffentlicht
+  (`.github/workflows/pages.yml`)
+
+**Auf dem iPhone installieren:** Link in **Safari** öffnen → Teilen-Symbol → **Zum Home-Bildschirm**
+→ „Als Web-App öffnen“ eingeschaltet lassen → Hinzufügen.
+
+Lokal testen: `node scripts/build-web.js`, dann `dist-web/` mit einem beliebigen Webserver ausliefern.
+
 ## Datenquellen
 
 | Daten | Quelle | Speicher |

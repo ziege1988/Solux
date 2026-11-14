@@ -6,6 +6,7 @@
   const { fmt, esc } = U;
   const api = window.solux;
 
+  const WEB = api.platform === 'web';
   const state = { cfg: null, kind: 'wl', sun: null, sunCanvas: null, regions: [], weather: null, news: null, update: null, labelHits: [] };
 
   /* ---------------- Start ---------------- */
@@ -56,9 +57,9 @@
       const sun = await api.sunImage(state.kind);
       if (my !== sunReq) return;
       const img = new Image();
-      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = sun.dataUrl; });
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = sun.dataUrl || sun.url; });
       state.sun = sun;
-      state.sunCanvas = U.colorizeSun(img, state.kind, 560, sun.radiusPx);
+      state.sunCanvas = sun.dataUrl ? U.colorizeSun(img, state.kind, 560, sun.radiusPx) : U.tintSun(img, state.kind, 560, sun.radiusPx);
       $('#sunLoad').hidden = true;
       const d = new Date(sun.date);
       $('#capDate').textContent = fmt.utcDate(d);
@@ -110,7 +111,8 @@
       x.beginPath(); x.moveTo(px + (lx - px) * 0.35, py + (ly - py) * 0.35); x.lineTo(lx, ly); x.stroke();
       x.fillStyle = hl ? '#fff' : r.type === 'spots' ? accent : '#b48cff';
       const left = lx < px;
-      const tx = left ? lx - tw - 3 : lx + 3;
+      const tx = Math.max(2, Math.min(W - tw - 2, left ? lx - tw - 3 : lx + 3));
+      x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.8)'; x.lineJoin = 'round'; x.strokeText(txt, tx, ly);
       x.fillText(txt, tx, ly);
       x.globalAlpha = 1;
       state.labelHits.push({ region: r.region, x0: Math.min(tx, px) - 6, x1: Math.max(tx + tw, px) + 6, y0: Math.min(ly, py) - 10, y1: Math.max(ly, py) + 10 });
@@ -285,7 +287,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePops(); });
 
   /* ---------------- Einstellungen ---------------- */
-  $('#gearBtn').addEventListener('click', () => ($('#setPop').hidden ? openSettings('allg') : closePops()));
+  $('#gearBtn').addEventListener('click', () => ($('#setPop').hidden ? openSettings(WEB ? 'ort' : 'allg') : closePops()));
   $('#setNav').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) openSettings(b.dataset.s); });
 
   const SURF = S.SURFACES;
@@ -299,6 +301,7 @@
       <button class="ghost" id="hideW" style="align-self:flex-start">Widget ausblenden (Menüleiste ☀︎)</button>
       <p class="note">Solux läuft im Hintergrund weiter und ist über das Sonnensymbol in der Menüleiste erreichbar.</p>`,
     ort: (c) => `<h3>Standort</h3>
+      ${WEB ? '<button class="ghost" id="gpsBtn" style="align-self:flex-start">Aktuellen Standort verwenden</button>' : ''}
       <div class="field"><label for="locq">Ort suchen</label><div style="display:flex;gap:6px"><input class="inp" id="locq" value="${esc(c.location.name)}"><button class="ghost" id="locBtn">Suchen</button></div></div>
       <div class="results" id="locRes"></div>
       <div class="row2"><div class="field"><label for="lat">Breite °N</label><input id="lat" type="number" step="0.0001" value="${c.location.lat}" data-p="location.lat" data-num></div>
@@ -306,12 +309,13 @@
       <div class="row2"><div class="field"><label for="ele">Höhe m</label><input id="ele" type="number" value="${c.location.elevation}" data-p="location.elevation" data-num></div>
       <div class="field"><label for="mnt">Montierung</label><select id="mnt" data-p="location.mount"><option value="altaz" ${c.location.mount === 'altaz' ? 'selected' : ''}>azimutal</option><option value="eq" ${c.location.mount === 'eq' ? 'selected' : ''}>parallaktisch</option></select></div></div>
       <div class="field"><label for="srf">Untergrund am Teleskop (für Seeing)</label><select id="srf" data-p="location.surface">${Object.entries(SURF).map(([k, v]) => `<option value="${k}" ${c.location.surface === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></div>
-      <p class="note">Koordinaten bleiben auf deinem Mac und werden nur für Wetterabfragen (Open-Meteo) genutzt.</p>`,
+      <p class="note">Koordinaten bleiben auf ${WEB ? 'diesem Gerät' : 'deinem Mac'} und werden nur für Wetterabfragen (Open-Meteo) genutzt.</p>`,
     daten: (c) => `<h3>Daten &amp; Quellen</h3>
       <div class="field"><label for="ref">Aktualisierung</label><select id="ref" data-p="data.refreshMinutes" data-num>${[10, 15, 30, 60].map((v) => `<option value="${v}" ${c.data.refreshMinutes === v ? 'selected' : ''}>alle ${v} Minuten</option>`).join('')}</select></div>
       <div class="box" id="storeBox">Lade Speicherinfo …</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="refNow">Jetzt aktualisieren</button><button class="ghost" id="clrImg">Bild-Zwischenspeicher leeren</button><button class="ghost" id="logBtn">Protokoll zeigen</button></div>
-      <p class="note">Sonnenbilder: NASA SDO über Helioviewer · Regionen, Flares, Kp, Meldungen: NOAA SWPC (lokal 60 Tage gesammelt) · Wetter: Open-Meteo.</p>`,
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="refNow">Jetzt aktualisieren</button>${WEB ? '' : '<button class="ghost" id="clrImg">Bild-Zwischenspeicher leeren</button><button class="ghost" id="logBtn">Protokoll zeigen</button>'}</div>
+      <p class="note">Sonnenbilder: NASA SDO über Helioviewer · Regionen, Flares, Kp, Meldungen: NOAA SWPC${WEB ? ' (ca. 30 Tage online)' : ' (lokal 60 Tage gesammelt)'} · Wetter: Open-Meteo.</p>
+      ${WEB ? `<p class="note">Solux mobil ${esc(c.version)} · aktualisiert sich automatisch beim Öffnen.</p>` : ''}`,
     aufn: (c) => `<h3>Aufnahmen</h3>
       <div class="field"><label>Standard-Zielordner</label><div class="note" style="word-break:break-all">${esc(c.recordings.folder || 'noch nicht gewählt – wird beim ersten Speichern gefragt')}</div></div>
       <div class="row2"><div class="field"><label for="jq">JPEG-Qualität</label><select id="jq" data-p="recordings.jpegQuality" data-num>${[85, 90, 95, 98, 100].map((v) => `<option ${c.recordings.jpegQuality === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
@@ -362,13 +366,17 @@
         } catch (e) { $('#locRes').innerHTML = `<span class="note">Suche nicht möglich: ${esc(e.message)}</span>`; }
       };
       $('#locBtn').addEventListener('click', run);
+      if (WEB) $('#gpsBtn').addEventListener('click', async (e) => {
+        e.target.textContent = 'Ermittle Standort …';
+        try { const p = await api.locate(); state.cfg = await api.setConfig({ location: { name: 'Aktueller Standort', lat: +p.lat.toFixed(4), lon: +p.lon.toFixed(4), ...(p.elevation ? { elevation: Math.round(p.elevation) } : {}) } }); openSettings('ort'); drawAltitude(); loadWeather(); loadNews(); }
+        catch (err) { e.target.textContent = err.message; }
+      });
       $('#locq').addEventListener('keydown', (e) => { if (e.key === 'Enter') run(); });
     }
     if (sec === 'daten') {
       api.storeInfo().then((i) => { $('#storeBox').innerHTML = `Lokaler Verlauf: <b>${i.days} Tage</b>${i.from ? ` (${i.from} bis ${i.to})` : ''}<br><span class="note">Speicher ${(i.bytes / 1048576).toFixed(1)} MB · ${esc(i.dir)}</span>`; });
       $('#refNow').addEventListener('click', async (e) => { e.target.textContent = 'Aktualisiere …'; await api.refresh(); loadSun(); e.target.textContent = 'Aktualisiert ✓'; });
-      $('#clrImg').addEventListener('click', async (e) => { await api.clearImages(); e.target.textContent = 'Geleert ✓'; });
-      $('#logBtn').addEventListener('click', () => api.showLog());
+      if (!WEB) { $('#clrImg').addEventListener('click', async (e) => { await api.clearImages(); e.target.textContent = 'Geleert ✓'; }); $('#logBtn').addEventListener('click', () => api.showLog()); }
     }
     if (sec === 'aufn') body.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => { await api.rec.profileReset(b.dataset.reset); openSettings('aufn'); }));
     if (sec === 'upd') {

@@ -1,0 +1,140 @@
+/*
+ * Solux mobil – Datenanbindung im Browser.
+ * Stellt dieselbe Schnittstelle bereit wie die Mac-App (window.solux), damit die
+ * Oberfläche (widget.js) unverändert auf dem Handy läuft. Daten kommen direkt von
+ * NOAA SWPC, Open-Meteo und Helioviewer; Einstellungen und der letzte Datenstand
+ * liegen nur auf diesem Gerät (localStorage).
+ */
+(() => {
+  'use strict';
+  const SW = window.SoluxSW, S = window.SoluxSeeing;
+  const VERSION = '1.0.0';
+
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('solux.' + k, JSON.stringify(v)); } catch { /* voll oder gesperrt */ } },
+  };
+  const merge = (a, b) => {
+    if (typeof a !== 'object' || a === null || Array.isArray(a)) return b === undefined ? a : b;
+    const o = { ...a };
+    for (const k of Object.keys(b || {})) o[k] = k in a ? merge(a[k], b[k]) : b[k];
+    return o;
+  };
+  const DEF = {
+    location: { name: 'Unterleichtersbach', lat: 50.28, lon: 9.8, elevation: 300, surface: 'pflaster', mount: 'altaz' },
+    widget: { kind: 'wl', showSplash: true }, data: { refreshMinutes: 15 },
+    general: {}, notify: {}, recordings: {}, profiles: {}, update: { repo: 'ziege1988/Solux' },
+  };
+  let cfg = merge(DEF, LS.get('config', {}));
+
+  const listeners = {};
+  const emit = (ch, p) => (listeners[ch] || []).forEach((f) => { try { f(p); } catch (e) { console.error(e); } });
+
+  async function getJSON(url) {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`${r.status} beim Abruf`);
+    return r.json();
+  }
+  // Helioviewer erlaubt keinen direkten Browser-Abruf, unterstützt aber JSONP
+  function jsonp(url) {
+    return new Promise((resolve, reject) => {
+      const cb = '__solux' + Math.random().toString(36).slice(2);
+      const s = document.createElement('script');
+      const done = () => { clearTimeout(t); delete window[cb]; s.remove(); };
+      const t = setTimeout(() => { done(); reject(new Error('Helioviewer antwortet nicht')); }, 25000);
+      window[cb] = (d) => { done(); resolve(d); };
+      s.onerror = () => { done(); reject(new Error('Helioviewer nicht erreichbar')); };
+      s.src = url + '&callback=' + cb;
+      document.head.appendChild(s);
+    });
+  }
+
+  /* ---------- Weltraumwetter (letzter Stand bleibt für den schnellen Start gespeichert) ---------- */
+  let sw = LS.get('sw', null);
+  let swLoading = null;
+  async function refresh() {
+    const keys = ['regions', 'flares', 'kp', 'alerts', 'ssn', 'flux'];
+    const res = await Promise.allSettled(keys.map((k) => getJSON(SW.SWPC_URLS[k])));
+    const d = { ...(sw || {}) };
+    res.forEach((r, i) => {
+      if (r.status !== 'fulfilled') return;
+      const v = r.value, k = keys[i];
+      if (k === 'kp') d.kp = SW.normKp(v);
+      else if (k === 'ssn') d.ssn = v.length ? v[v.length - 1].swpc_ssn : d.ssn;
+      else if (k === 'flux') d.flux = v.length ? v[0].flux : d.flux;
+      else d[k] = v;
+    });
+    d.updated = new Date().toISOString();
+    sw = d; LS.set('sw', d);
+    emit('data-updated');
+    return { ok: res.filter((r) => r.status === 'fulfilled').length, total: keys.length };
+  }
+  async function ensureData() {
+    const fresh = sw && Date.now() - new Date(sw.updated).getTime() < 15 * 60000;
+    if (fresh) return sw;
+    if (sw) { if (!swLoading) swLoading = refresh().finally(() => (swLoading = null)); return sw; } // alter Stand sofort, neuer im Hintergrund
+    swLoading ||= refresh().finally(() => (swLoading = null));
+    await swLoading;
+    return sw;
+  }
+
+  let wcache = null;
+  async function weather() {
+    const key = `${cfg.location.lat},${cfg.location.lon},${cfg.location.surface}`;
+    if (wcache && wcache.key === key && Date.now() - wcache.t < 10 * 60000) return wcache.data;
+    const w = await getJSON(SW.weatherUrl(cfg.location));
+    const data = SW.buildWeather(w, cfg.location, LS.get('ratings', []));
+    wcache = { key, t: Date.now(), data };
+    return data;
+  }
+
+  window.solux = {
+    platform: 'web',
+    getConfig: async () => ({ ...JSON.parse(JSON.stringify(cfg)), version: VERSION, packaged: true }),
+    setConfig: async (patch) => {
+      cfg = merge(cfg, patch); LS.set('config', cfg);
+      if (patch.location) wcache = null;
+      return window.solux.getConfig();
+    },
+    refresh: async () => { wcache = null; return refresh(); },
+    sunImage: async (kind) => {
+      const meta = await jsonp(SW.closestImageUrl(kind, new Date()));
+      const src = SW.SOURCES[kind] || SW.SOURCES.wl;
+      return { kind, label: src.label, date: new Date(meta.date.replace(' ', 'T') + 'Z').toISOString(), size: SW.IMG_SIZE, radiusPx: SW.IMG_SIZE * SW.DISC_FRACTION, url: SW.screenshotUrl(kind, meta) };
+    },
+    regions: async (iso) => SW.computeRegions((await ensureData()).regions, iso ? new Date(iso) : new Date()),
+    regionHistory: async (num) => SW.regionHistory((await ensureData()).regions, num),
+    news: async () => { const d = await ensureData(); return SW.buildNews(d, cfg.location); },
+    weather,
+    rateSeeing: async (rating, model) => {
+      const r = LS.get('ratings', []); r.push({ time: new Date().toISOString(), rating, model });
+      LS.set('ratings', r.slice(-60)); wcache = null;
+      return S.calibrationFrom(r);
+    },
+    storeInfo: async () => {
+      const days = [...new Set(((sw && sw.regions) || []).map((r) => r.observed_date))].sort();
+      let bytes = 0; try { for (const k of Object.keys(localStorage)) if (k.startsWith('solux.')) bytes += localStorage.getItem(k).length; } catch { /* egal */ }
+      return { bytes, days: days.length, from: days[0], to: days[days.length - 1], dir: 'nur auf diesem Gerät' };
+    },
+    geoSearch: async (name) => {
+      const r = await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=6&language=de&format=json`);
+      return (r.results || []).map((x) => ({ name: x.name, admin: [x.admin3, x.admin2, x.admin1].filter(Boolean).join(', '), country: x.country, lat: x.latitude, lon: x.longitude, elevation: x.elevation }));
+    },
+    locate: () => new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('Standortdienste nicht verfügbar'));
+      navigator.geolocation.getCurrentPosition((p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude, elevation: p.coords.altitude }), (e) => reject(new Error(e.code === 1 ? 'Standortzugriff nicht erlaubt' : 'Standort nicht ermittelbar')), { enableHighAccuracy: false, timeout: 15000 });
+    }),
+    // Mac-spezifische Funktionen sind auf dem Handy ohne Wirkung
+    clearImages: async () => true, showLog: async () => {}, quit: async () => {}, openRecordings: async () => {}, hideWidget: async () => {},
+    openExternal: async (url) => window.open(url, '_blank', 'noopener'),
+    rec: { profileReset: async () => ({}) },
+    update: { check: async () => ({ available: false, message: 'Die Handy-Version aktualisiert sich automatisch.' }), install: async () => false },
+    on: (ch, fn) => { (listeners[ch] ||= []).push(fn); return () => { listeners[ch] = listeners[ch].filter((f) => f !== fn); }; },
+  };
+
+  // Beim Zurückkehren in die App aktualisieren, sonst alle 15 Minuten
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && sw && Date.now() - new Date(sw.updated).getTime() > 5 * 60000) { wcache = null; refresh().catch(() => {}); }
+  });
+  setInterval(() => { if (document.visibilityState === 'visible') refresh().catch(() => {}); }, 15 * 60000);
+})();
