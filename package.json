@@ -1,7 +1,7 @@
 {
   "name": "solux",
   "productName": "Solux",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Sonnen-Widget für den Mac: aktuelle Sonne, Beobachtungsbedingungen und automatische Auswertung eigener Aufnahmen.",
   "main": "src/main/main.js",
   "author": "Solux",

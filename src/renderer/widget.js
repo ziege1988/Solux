@@ -89,9 +89,10 @@
   function drawSunCanvas(highlight = null) {
     const cv = $('#sunCv'), x = cv.getContext('2d'), W = cv.width;
     x.clearRect(0, 0, W, W); x.fillStyle = '#000'; x.fillRect(0, 0, W, W);
-    if (state.sunCanvas) x.drawImage(state.sunCanvas, 0, 0, W, W);
+    const Z = 0.88; // Sonne etwas kleiner, damit sie nicht am Rand klebt
+    if (state.sunCanvas) x.drawImage(state.sunCanvas, W * (1 - Z) / 2, W * (1 - Z) / 2, W * Z, W * Z);
     if (!state.sun) return;
-    const c = W / 2, R = state.sun.radiusPx * (W / state.sun.size);
+    const c = W / 2, R = state.sun.radiusPx * (W / state.sun.size) * Z;
     state.labelHits = [];
     x.font = `500 ${Math.round(W * 0.03)}px ${getComputedStyle(document.body).getPropertyValue('--f-mono')}`;
     x.textBaseline = 'middle';

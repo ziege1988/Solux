@@ -87,16 +87,20 @@
     const NB = 48, bins = Array.from({ length: NB }, () => []);
     if (kind !== 'wl') for (let j = 0; j < lum.length; j += 3) { const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c, py - c) / R; if (rr < 0.995) bins[Math.min(NB - 1, (rr * NB) | 0)].push(lum[j]); }
     const ringMed = bins.map((b) => { if (!b.length) return med; b.sort((a, c2) => a - c2); return b[b.length >> 1]; });
-    const pal = kind === 'ha' ? [[0, 0, 0], [105, 16, 6], [190, 52, 20], [246, 132, 70], [255, 226, 190]] : [[0, 0, 0], [72, 30, 140], [150, 95, 235], [222, 196, 255], [255, 252, 255]];
+    // H-Alpha-Farben nach einer eigenen Aufnahme des Nutzers ausgemessen (kräftiges Orange-Braun)
+    const pal = kind === 'ha'
+      ? [[0, [18, 3, 0]], [0.16, [139, 36, 1]], [0.36, [180, 73, 10]], [0.52, [195, 92, 22]], [0.68, [210, 111, 37]], [0.82, [226, 140, 61]], [0.93, [241, 176, 101]], [1, [255, 222, 160]]]
+      : [[0, [0, 0, 0]], [0.25, [72, 30, 140]], [0.5, [150, 95, 235]], [0.75, [222, 196, 255]], [1, [255, 252, 255]]];
     for (let j = 0, i = 0; j < lum.length; j++, i += 4) {
       const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c + 0.5, py - c + 0.5) / R;
       if (rr > 1.004) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255; continue; }
       const edge = rr > 1 ? 1 - (rr - 1) / 0.004 : 1;
       if (kind === 'ca' || kind === 'ha') {
         // Kalzium: Grundhelligkeit, damit sich die Scheibe vom Schwarz abhebt · H-Alpha: Kontrast für Filamente und Plages anheben
-        const q = lum[j] / ringMed[Math.min(NB - 1, (Math.min(rr, 0.999) * NB) | 0)], v = Math.max(0, Math.min(1, kind === 'ha' ? 0.52 + (q - 1) * 2.2 : 0.18 + q * 0.48)) * edge;
-        const t = v * (pal.length - 1), k = Math.min(pal.length - 2, t | 0), f = t - k;
-        for (let ch = 0; ch < 3; ch++) d[i + ch] = pal[k][ch] + (pal[k + 1][ch] - pal[k][ch]) * f;
+        const q = lum[j] / ringMed[Math.min(NB - 1, (Math.min(rr, 0.999) * NB) | 0)], v = Math.max(0, Math.min(1, kind === 'ha' ? 0.52 + (q - 1) * 2.2 : 0.08 + q * 0.46)) * edge;
+        let k = 0; while (k < pal.length - 2 && v > pal[k + 1][0]) k++;
+        const f = Math.max(0, Math.min(1, (v - pal[k][0]) / (pal[k + 1][0] - pal[k][0])));
+        for (let ch = 0; ch < 3; ch++) d[i + ch] = pal[k][1][ch] + (pal[k + 1][1][ch] - pal[k][1][ch]) * f;
       } else {
         const mu = Math.sqrt(Math.max(0, 1 - Math.min(1, rr) ** 2));
         const ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2;
@@ -131,7 +135,7 @@
       liftLimb(x, c, R, size, 0.32);
       x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
       x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0);
-      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#ff7f52'; x.fillRect(0, 0, size, size);
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#ff7d1c'; x.fillRect(0, 0, size, size);
     }
     else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
     if (kind === 'wl') {
