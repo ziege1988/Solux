@@ -98,21 +98,21 @@ class DataStore {
   regionHistory(num) { return SW.regionHistory(Object.values(this.load('regions.json', {})), num); }
 
   /* ---------------- Sonnenbilder ---------------- */
-  async sunImage(kind = 'wl', date = null) {
+  async sunImage(kind = 'wl', date = null, size = IMG_SIZE) {
     const src = SOURCES[kind] || SOURCES.wl;
     const when = date ? new Date(date) : new Date();
     const meta = await this.fetchJSON(SW.closestImageUrl(kind, when));
     const imgDate = new Date(meta.date.replace(' ', 'T') + 'Z');
-    const cacheName = `${kind}_${meta.id}.png`;
+    const cacheName = `${kind}_${meta.id}_${size}.png`;
     const cachePath = path.join(this.dir, 'images', cacheName);
     if (!fs.existsSync(cachePath)) {
-      const res = await httpFetch(SW.screenshotUrl(kind, meta), { signal: AbortSignal.timeout(90000) });
+      const res = await httpFetch(SW.screenshotUrl(kind, meta, size), { signal: AbortSignal.timeout(90000) });
       if (!res.ok) throw new Error(`Sonnenbild nicht verfügbar (${res.status})`);
       fs.writeFileSync(cachePath, Buffer.from(await res.arrayBuffer()));
       this.pruneImages();
     }
     return {
-      kind, label: src.label, date: imgDate.toISOString(), size: IMG_SIZE, radiusPx: IMG_SIZE * DISC_FRACTION,
+      kind, label: src.label, date: imgDate.toISOString(), size, radiusPx: size * DISC_FRACTION,
       dataUrl: 'data:image/png;base64,' + fs.readFileSync(cachePath).toString('base64'),
     };
   }

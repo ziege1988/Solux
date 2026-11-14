@@ -229,7 +229,7 @@ function registerIpc() {
     return cfg;
   });
   ipcMain.handle('data:refresh', () => refresh());
-  ipcMain.handle('data:sun', (_e, kind, date) => store.sunImage(kind, date));
+  ipcMain.handle('data:sun', (_e, kind, date, size) => store.sunImage(kind, date, Math.min(4096, size || undefined) || undefined));
   ipcMain.handle('data:regions', (_e, date) => store.regionsFor(date ? new Date(date) : new Date()));
   ipcMain.handle('data:regionHistory', (_e, num) => store.regionHistory(num));
   ipcMain.handle('data:news', () => store.news(config.get()));
@@ -325,7 +325,7 @@ async function devScreenshots(dir) {
   }
   if (process.env.SOLUX_SHOT_REC) {
     openRecordings(); await wait(3000);
-    if (process.env.SOLUX_SHOT_REC !== '1') await recWin.webContents.executeJavaScript(`window.__soluxTestLoad && window.__soluxTestLoad(${JSON.stringify(process.env.SOLUX_SHOT_REC)})`).catch((e) => log('rec ' + e.message));
+    if (process.env.SOLUX_SHOT_REC !== '1') await recWin.webContents.executeJavaScript(`window.__soluxTestLoad && window.__soluxTestLoad(${JSON.stringify(process.env.SOLUX_SHOT_REC)}, ${process.env.SOLUX_SHOT_REC_OPTS || 'null'})`).catch((e) => log('rec ' + e.message));
     await wait(Number(process.env.SOLUX_SHOT_REC_WAIT || 15000));
     await shot(recWin, 'recordings');
     if (process.env.SOLUX_SHOT_REC_JS) { await recWin.webContents.executeJavaScript(process.env.SOLUX_SHOT_REC_JS).catch((e) => log('rec js ' + e.message)); await wait(8000); await shot(recWin, 'recordings2'); }

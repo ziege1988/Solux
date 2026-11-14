@@ -21,7 +21,16 @@ beschriftet und mit Legende und Textdatei gespeichert.
 
 **Aufnahmen**
 - JPEG, TIFF (auch 16 Bit) oder PNG per Drag & Drop
-- Aufnahmezeit aus den EXIF-Daten; ohne EXIF wird das Dateidatum genutzt, die Zeit ist von Hand änderbar
+- Nach dem Laden fragt Solux in einem Dialog **Datum, Uhrzeit, Wellenlänge und Bildart** ab (vorbelegt aus
+  EXIF bzw. Dateidatum), dazu optional den **Bildmaßstab** (Brennweite, Pixelgröße, Binning). Mit
+  **Starten** oder **Abbrechen** geht es weiter.
+- Drei Bildarten, automatisch erkannt oder fest gewählt:
+  - **Ganze Sonne:** Abgleich über die ganze Scheibe
+  - **Ausschnitt mit Sonnenrand:** Mittelpunkt aus dem sichtbaren Randbogen (mit Maßstab schon ab
+    etwa 15° Bogen), Abgleich nur im sichtbaren Bereich
+  - **Oberfläche ohne Rand** (z. B. Fleckengruppe): Solux sucht das Fleckenmuster auf der ganzen
+    SDO-Sonne und bestimmt Lage, Drehung und Spiegelung. Dafür sind der Bildmaßstab und mindestens drei
+    Flecken im Bild nötig. Die Ausgabe enthält heliografisches Gradnetz, Nordpfeil und Maßstabsbalken.
 - Mitlaufendes Protokoll mit Animationen: Randerkennung, Ephemeriden, Referenzbild, Korrelationssuche
 - **Automatische Ausrichtung** durch Abgleich mit dem SDO-Bild zur Aufnahmezeit, mit Drehung und Spiegelung
 - Bei zu wenigen Merkmalen (eine oder keine Fleckengruppe) fragt Solux nach:

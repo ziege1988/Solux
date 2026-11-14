@@ -49,3 +49,11 @@ body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .dlgbtns button { text-align: left; }
 .dlgbtns button small { display: block; font-weight: 400; opacity: .75; }
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line2); padding: 8px 14px; border-radius: 8px; font-size: 12px; z-index: 60; }
+
+.intake { width: min(620px, 94vw); gap: 12px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.optics { border: 1px solid var(--line2); border-radius: 10px; padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.optics legend { padding: 0 6px; font-size: 12px; color: var(--muted); }
+.dlgrow { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.dlgrow .pbtn { padding: 9px 22px; font-size: 13px; }
+#intakeInfo { white-space: nowrap; }

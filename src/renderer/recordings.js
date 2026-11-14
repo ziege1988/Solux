@@ -7,9 +7,11 @@
   const api = window.solux;
   const D2R = Math.PI / 180;
   const MODE_LABEL = { wl: 'Weißlicht', ca: 'Kalzium (Ca-K)' };
+  const TYPE_LABEL = { full: 'ganze Sonne', partial: 'Ausschnitt mit Sonnenrand', surface: 'Oberfläche ohne Rand' };
 
   const st = {
     cfg: null, mode: 'wl', file: null, src: null, work: null, time: null, timeSource: '', disc: null, eph: null,
+    imgType: 'auto', type: 'full', scaleFull: null,
     ref: null, regions: [], regionsDay: null, result: null, method: null, groups: null, extra: [], spotsTotal: 0, out: null, txt: '', run: 0,
   };
 
@@ -20,6 +22,9 @@
       try {
         if (task === 'align') res(AL.align(args.user, args.ref, args.mode, args.opts));
         else if (task === 'disc') res(AL.detectDisc(args.gray, args.w, args.h));
+        else if (task === 'classify') res(AL.classifyImage(args.gray, args.w, args.h, args.opts));
+        else if (task === 'surface') res(AL.alignSurface(args.user, args.refSpots, args.mode, args.opts));
+        else if (task === 'blobs') res(AL.detectBlobs(args.gray, args.w, args.h, args.opts));
         else res(AL.detectSpots(args.gray, args.w, args.h, args.disc, args.rotation, args.flip, args.opts));
       } catch (e) { rej(e); }
     }, 30));
@@ -72,7 +77,18 @@
     if (!/\.(jpe?g|tiff?|png)$/i.test(f.name)) return toast('Bitte eine JPEG- oder TIFF-Datei ablegen.');
     loadPath(api.rec.pathForFile(f));
   });
-  window.__soluxTestLoad = (p) => loadPath(p);
+  // Nur für automatische Tests (Entwicklungsmodus): Datei laden und Einordnung vorbelegen/bestätigen
+  window.__soluxTestLoad = (p, o) => {
+    loadPath(p);
+    if (o) setTimeout(() => {
+      if (o.type) $('#inType').value = o.type;
+      if (o.focal) $('#inFocal').value = o.focal;
+      if (o.pixel) $('#inPixel').value = o.pixel;
+      if (o.mode) $(`#inMode [data-k="${o.mode}"]`).click();
+      updateIntakeScale();
+      if (o.submit !== false) $('#intakeForm').requestSubmit();
+    }, o.delay || 1500);
+  };
 
   async function loadPath(p) {
     clearLog(); setState('lädt …');
@@ -92,12 +108,14 @@
       // Zeit bestimmen
       const t = exifTime(f.exif, st.cfg.recordings.cameraTime);
       if (t) { st.time = t.date; st.timeSource = t.source; } else { st.time = new Date(f.mtime); st.timeSource = 'Dateidatum (keine EXIF-Zeit)'; }
-      setTimeField(st.time);
       // Wellenlänge aus Dateiname/Ordner erraten
       if (/(^|[^a-z])(ca|cak|ca-k|calcium|kalzium|caii|393)([^a-z]|$)/i.test(f.path)) setMode('ca', false);
       else if (/(weiss|weiß|wl|white|herschel|kontinuum)/i.test(f.path)) setMode('wl', false);
-      $('#empty').hidden = true; $('#rerun').disabled = false;
-      processImage();
+      $('#empty').hidden = true; $('#intakeBtn').disabled = false;
+      st.imgType = 'auto';
+      showCanvas(cv);
+      setState('wartet auf Einordnung');
+      if (await askIntake()) processImage(); else { setState('bereit'); logLine('Auswertung abgebrochen – über „Einordnung …“ jederzeit starten.', 'warn'); }
     } catch (e) {
       logLine(`Datei konnte nicht gelesen werden: ${esc(e.message)}`, 'err'); setState('Fehler');
     }
@@ -118,13 +136,57 @@
     if (cameraTime === 'utc') return { date: new Date(Date.UTC(y, mo - 1, d, h, mi, s)), source: 'EXIF (Kamera auf UTC)' };
     return { date: new Date(y, mo - 1, d, h, mi, s), source: 'EXIF (Kamera auf Ortszeit)' };
   }
-  function setTimeField(d) {
-    const p = (n) => String(n).padStart(2, '0');
-    $('#capTime').value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-    $('#timeSrc').textContent = st.timeSource;
+  /* ---------------- Einordnung (Datum, Wellenlänge, Bildart, Maßstab) ---------------- */
+  const pad2 = (n) => String(n).padStart(2, '0');
+  function intakeScale() {
+    const f = parseFloat($('#inFocal').value), px = parseFloat($('#inPixel').value), bin = parseInt($('#inBin').value, 10) || 1;
+    return f > 0 && px > 0 ? (206.265 * px * bin) / f : null;
   }
-  $('#capTime').addEventListener('change', () => { const d = new Date($('#capTime').value); if (!isNaN(d)) { st.time = d; st.timeSource = 'manuell geändert'; $('#timeSrc').textContent = st.timeSource; } });
-  $('#rerun').addEventListener('click', () => st.src && processImage());
+  function updateIntakeScale() {
+    const sc = intakeScale();
+    const need = ['partial', 'surface', 'auto'].includes($('#inType').value);
+    $('#inScale').textContent = sc
+      ? `${sc.toFixed(3).replace('.', ',')}″ pro Pixel · Sonnendurchmesser ≈ ${Math.round((2 * 959.6) / sc)} px`
+      : need ? 'Ohne Maßstab: Ausschnitte nur mit langem Randbogen, Oberflächenbilder gar nicht auswertbar.' : 'Für die ganze Sonne nicht nötig.';
+  }
+  function askIntake() {
+    return new Promise((resolve) => {
+      const d = st.time, z = $('#inZone');
+      const fill = () => {
+        if (z.value === 'utc') { $('#inDate').value = d.toISOString().slice(0, 10); $('#inTime').value = d.toISOString().slice(11, 19); }
+        else { $('#inDate').value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; $('#inTime').value = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; }
+      };
+      z.value = 'local'; fill(); z.onchange = fill;
+      $('#inFile').textContent = `${st.file.name} · ${st.src.width}×${st.src.height} px`;
+      $('#inSrc').textContent = `Vorschlag aus: ${st.timeSource}. Bitte prüfen – die Zeit bestimmt Referenzbild und Fleckenpositionen.`;
+      const setM = (m) => document.querySelectorAll('#inMode button').forEach((b) => b.classList.toggle('on', b.dataset.k === m));
+      let mode = st.mode; setM(mode);
+      $('#inMode').onclick = (e) => { const b = e.target.closest('button'); if (b) { mode = b.dataset.k; setM(mode); } };
+      $('#inType').value = st.imgType || 'auto';
+      const o = st.cfg.recordings.optics || {};
+      $('#inFocal').value = o.focal || ''; $('#inPixel').value = o.pixel || ''; $('#inBin').value = String(o.binning || 1);
+      ['inFocal', 'inPixel', 'inBin', 'inType'].forEach((id) => { $('#' + id).oninput = updateIntakeScale; $('#' + id).onchange = updateIntakeScale; });
+      updateIntakeScale();
+      $('#intake').hidden = false;
+      setTimeout(() => $('#inStart').focus(), 50);
+      const close = (ok) => { $('#intake').hidden = true; resolve(ok); };
+      $('#inCancel').onclick = () => close(false);
+      $('#intakeForm').onsubmit = (e) => {
+        e.preventDefault();
+        const t = new Date(`${$('#inDate').value}T${$('#inTime').value}${z.value === 'utc' ? 'Z' : ''}`);
+        if (isNaN(t)) { $('#inSrc').textContent = 'Bitte gültiges Datum und Uhrzeit eingeben.'; return; }
+        if (t.getTime() !== st.time.getTime()) { st.time = t; st.timeSource = 'im Dialog bestätigt/geändert'; } else st.timeSource += ' · bestätigt';
+        st.imgType = $('#inType').value;
+        st.scaleFull = intakeScale();
+        const optics = { focal: parseFloat($('#inFocal').value) || null, pixel: parseFloat($('#inPixel').value) || null, binning: parseInt($('#inBin').value, 10) || 1 };
+        st.cfg.recordings.optics = optics; api.setConfig({ recordings: { optics } });
+        if (mode !== st.mode) setMode(mode, false);
+        $('#intakeInfo').textContent = `${fmt.dateShort.format(st.time)} ${fmt.time.format(st.time)} · ${MODE_LABEL[st.mode]}`;
+        close(true);
+      };
+    });
+  }
+  $('#intakeBtn').addEventListener('click', async () => { if (st.src && (await askIntake())) processImage(); });
 
   /* ---------------- Protokoll ---------------- */
   function clearLog() { $('#logPre').innerHTML = ''; $('#curveSvg').innerHTML = ''; }
@@ -172,6 +234,20 @@
       x.strokeStyle = 'rgba(243,181,68,.3)'; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.stroke();
     };
   }
+  /** Bildpixel -> Sonnenkoordinaten (Radien, x West+, y Nord+) bei gegebener Ausrichtung. */
+  function mapToSun(u, v, disc, rotation, flip) {
+    let dx = u - disc.cx; const dy = v - disc.cy; if (flip) dx = -dx;
+    const c = Math.cos(rotation * D2R), s = Math.sin(rotation * D2R);
+    return { x: (dx * c - dy * s) / disc.r, y: -(dx * s + dy * c) / disc.r };
+  }
+  function scanAnim(w, h) {
+    return (x, t) => {
+      const y = ((t * 0.45) % 1) * h;
+      const g = x.createLinearGradient(0, y - h * 0.12, 0, y); g.addColorStop(0, 'rgba(243,181,68,0)'); g.addColorStop(1, 'rgba(243,181,68,.25)');
+      x.fillStyle = g; x.fillRect(0, y - h * 0.12, w, h * 0.12);
+      x.strokeStyle = 'rgba(243,181,68,.95)'; x.lineWidth = Math.max(2, h * 0.003); x.beginPath(); x.moveTo(0, y); x.lineTo(w, y); x.stroke();
+    };
+  }
   function drawCurve(curve, bestShift) {
     const svg = $('#curveSvg'); if (!curve) { svg.innerHTML = ''; return; }
     const n = curve.length, mn = Math.min(...curve), mx = Math.max(...curve);
@@ -185,6 +261,7 @@
     const my = ++st.run;
     const alive = () => my === st.run;
     clearLog(); setState('arbeitet …'); $('#saveBtn').disabled = true; $('#manual').hidden = true; $('#saved').textContent = '';
+    st.disc = null; st.align = null; st.groups = null; st.extra = [];
     st.cfg = await api.getConfig(); updateProfileInfo();
     const f = st.file, src = st.src, prof = st.cfg.profiles[st.mode];
     try {
@@ -201,13 +278,28 @@
       st.work = { canvas: wc, gray, w: wc.width, h: wc.height, k };
       showCanvas(wc);
 
-      logLine('▸ Sonnenrand suchen  (steilster Helligkeitsabfall auf 720 Strahlen, Kreis-Fit)');
-      const dWork = await compute('disc', { gray, w: wc.width, h: wc.height });
+      const rsunArc = 959.63 / A.sunApparent(st.time).R;
+      const scaleWork = st.scaleFull ? st.scaleFull / k : null;
+      if (st.scaleFull) logLine(`▸ Bildmaßstab  ${st.scaleFull.toFixed(3)}″/px (Brennweite/Pixelgröße) · erwarteter Sonnenradius ${(rsunArc / st.scaleFull).toFixed(0)} px`);
+      logLine('▸ Bildart bestimmen  (Sonnenrand: steilster Helligkeitsabfall auf 720 Strahlen, Kreis-Fit)');
+      let cls = st.imgType === 'surface' ? { type: 'surface' } : await compute('classify', { gray, w: wc.width, h: wc.height, opts: { expectedR: scaleWork ? rsunArc / scaleWork : null } });
       if (!alive()) return;
-      overlay(limbAnim(dWork, 1)); await sleep(1000);
-      st.disc = { cx: dWork.cx / k, cy: dWork.cy / k, r: dWork.r / k };
-      st.work.disc = dWork;
-      logLine(`  ✓ Mittelpunkt (${st.disc.cx.toFixed(1)}, ${st.disc.cy.toFixed(1)})  r = ${st.disc.r.toFixed(1)} px  · Randabdeckung ${Math.round(dWork.coverage * 100)} %  · Restfehler ${(dWork.residual / k).toFixed(2)} px`, 'ok');
+      if ((st.imgType === 'full' || st.imgType === 'partial') && cls.disc) cls.type = st.imgType;
+      if ((st.imgType === 'full' || st.imgType === 'partial') && !cls.disc) throw new Error('Kein Sonnenrand gefunden. Bildart „Oberfläche ohne Rand“ wählen?');
+      st.type = cls.type;
+      let dWork = null;
+      if (cls.type !== 'surface') {
+        dWork = cls.disc;
+        overlay(limbAnim(dWork, 1)); await sleep(1000);
+        st.disc = { cx: dWork.cx / k, cy: dWork.cy / k, r: dWork.r / k };
+        st.work.disc = dWork;
+        logLine(`  ✓ ${st.imgType === 'auto' ? 'Erkannt: ' : ''}${TYPE_LABEL[cls.type]}`, 'ok');
+        logLine(`  ✓ Mittelpunkt (${st.disc.cx.toFixed(1)}, ${st.disc.cy.toFixed(1)})  r = ${st.disc.r.toFixed(1)} px${dWork.fixedR ? ' (aus Bildmaßstab)' : ''}  · sichtbarer Randbogen ${Math.round(dWork.span)}°  · Restfehler ${(dWork.residual / k).toFixed(2)} px`, 'ok');
+        if (cls.type === 'partial' && !st.scaleFull) logLine('  ! Tipp: Mit Brennweite und Pixelgröße wird der Mittelpunkt bei kurzen Randbögen genauer.', 'warn');
+      } else {
+        logLine(`  ✓ ${st.imgType === 'auto' ? 'Erkannt: ' : ''}${TYPE_LABEL.surface}${cls.reason ? ' – ' + esc(cls.reason) : ''}`, 'ok');
+        if (!scaleWork) throw new Error('Für Oberflächenbilder wird der Bildmaßstab benötigt – bitte unter „Einordnung …“ Brennweite und Pixelgröße eintragen.');
+      }
 
       // Ephemeriden
       const { lat, lon, mount } = st.cfg.location;
@@ -218,9 +310,11 @@
       if (pos.alt < 0) logLine('  ! Die Sonne stand zur angegebenen Zeit unter dem Horizont – Aufnahmezeit prüfen.', 'warn');
 
       // Referenz & Regionen
-      logLine(`▸ Referenz laden  ${st.mode === 'ca' ? 'SDO/AIA 1700 Å' : 'SDO/HMI Kontinuum'} zur Aufnahmezeit …`);
-      overlay(sweepAnim(dWork, 1));
-      const [refImg, reg] = await Promise.all([api.sunImage(st.mode, st.time.toISOString()), api.regions(st.time.toISOString())]);
+      // Oberflächenbilder: Flecken werden im hochaufgelösten HMI-Kontinuum gesucht (auch für Ca-K)
+      const refKind = st.type === 'surface' ? 'wl' : st.mode, refSize = st.type === 'surface' ? 2048 : undefined;
+      logLine(`▸ Referenz laden  ${refKind === 'ca' ? 'SDO/AIA 1700 Å' : 'SDO/HMI Kontinuum'}${refSize ? ' 2048 px' : ''} zur Aufnahmezeit …`);
+      overlay(dWork ? sweepAnim(dWork, 1) : scanAnim(wc.width, wc.height));
+      const [refImg, reg] = await Promise.all([api.sunImage(refKind, st.time.toISOString(), refSize), api.regions(st.time.toISOString())]);
       if (!alive()) return;
       const img = new Image(); await new Promise((r, j) => { img.onload = r; img.onerror = j; img.src = refImg.dataUrl; });
       const rc = document.createElement('canvas'); rc.width = rc.height = refImg.size;
@@ -233,29 +327,48 @@
       else logLine('▸ NOAA-Regionen  für dieses Datum nicht im lokalen Speicher (60 Tage) – Beschriftung nur mit erkannten Flecken.', 'warn');
 
       // Ausrichtung
-      logLine(`▸ Kreuzkorrelation  360° in 0,5°-Schritten, ${prof.flip == null ? 'mit und ohne Spiegelung' : prof.flip ? 'gespiegelt (Profil)' : 'ungespiegelt (Profil)'}`);
-      const bar = logBar();
-      let pct = 0; const barTimer = setInterval(() => { pct = Math.min(95, pct + 4); bar.textContent = `  [${'█'.repeat(pct / 5)}${'░'.repeat(20 - pct / 5)}] ${pct} %`; }, 70);
       let res;
-      try {
-        res = await compute('align', { user: { gray: gray.slice(), w: wc.width, h: wc.height }, ref: { gray: st.ref.gray, w: st.ref.w, h: st.ref.h }, mode: st.mode, opts: { knownFlip: prof.flip } });
-      } finally { clearInterval(barTimer); }
-      if (!alive()) return;
-      bar.textContent = `  [${'█'.repeat(20)}] 100 %`;
-      res.log.forEach((l) => logLine('  ' + esc(l)));
-      drawCurve(res.curve, -res.rotation);
+      if (st.type === 'surface') {
+        logLine('▸ Flecken der ganzen SDO-Sonne erfassen …');
+        const refDisc = await compute('disc', { gray: st.ref.gray, w: st.ref.w, h: st.ref.h });
+        const refSpots = await compute('spots', { gray: st.ref.gray, w: st.ref.w, h: st.ref.h, disc: refDisc, rotation: 0, flip: false, opts: { grid: Math.round(refDisc.r * 2), threshold: -0.12 } });
+        if (!alive()) return;
+        logLine(`▸ Punktmuster-Abgleich  ${refSpots.length} Referenzflecken · Drehung, Spiegelung und Lage frei`);
+        const bar = logBar();
+        let pct = 0; const barTimer = setInterval(() => { pct = Math.min(95, pct + 5); bar.textContent = `  [${'█'.repeat(pct / 5)}${'░'.repeat(20 - pct / 5)}] ${pct} %`; }, 70);
+        try { res = await compute('surface', { user: { gray: gray.slice(), w: wc.width, h: wc.height }, refSpots, mode: st.mode, opts: { scale: scaleWork, rsun: rsunArc, knownFlip: prof.flip } }); }
+        finally { clearInterval(barTimer); }
+        if (!alive()) return;
+        bar.textContent = `  [${'█'.repeat(20)}] 100 %`;
+        res.log.forEach((l) => logLine('  ' + esc(l)));
+        drawCurve(null);
+        if (res.disc) { dWork = res.disc; st.work.disc = dWork; st.disc = { cx: dWork.cx / k, cy: dWork.cy / k, r: dWork.r / k }; }
+      } else {
+        logLine(`▸ Kreuzkorrelation  360° in 0,5°-Schritten, ${prof.flip == null ? 'mit und ohne Spiegelung' : prof.flip ? 'gespiegelt (Profil)' : 'ungespiegelt (Profil)'}${st.type === 'partial' ? ' · nur sichtbarer Bereich' : ''}`);
+        const bar = logBar();
+        let pct = 0; const barTimer = setInterval(() => { pct = Math.min(95, pct + 4); bar.textContent = `  [${'█'.repeat(pct / 5)}${'░'.repeat(20 - pct / 5)}] ${pct} %`; }, 70);
+        try {
+          res = await compute('align', { user: { gray: gray.slice(), w: wc.width, h: wc.height }, ref: { gray: st.ref.gray, w: st.ref.w, h: st.ref.h }, mode: st.mode, opts: { knownFlip: prof.flip, disc: dWork } });
+        } finally { clearInterval(barTimer); }
+        if (!alive()) return;
+        bar.textContent = `  [${'█'.repeat(20)}] 100 %`;
+        res.log.forEach((l) => logLine('  ' + esc(l)));
+        drawCurve(res.curve, -res.rotation);
+      }
       st.result = res;
 
       let rotation = res.rotation, flip = res.flip, method = 'auto';
       if (res.ok) {
-        logLine(`  ✓ Drehung ${rotation.toFixed(2)}°${flip ? ' · gespiegelt' : ''} · Sicherheit ${(res.ncc * 100).toFixed(0)} % / ×${res.ratio.toFixed(1)}`, 'ok');
+        if (st.type === 'surface') { const h = A.diskToHeliographic(res.center.x, res.center.y, st.eph.B0); logLine(`  ✓ Stelle gefunden: Bildmitte bei ${h ? A.formatLocation(h.lat, h.cmd) : '–'} · Drehung ${rotation.toFixed(2)}°${flip ? ' · gespiegelt' : ''} · ${res.inliers} Flecken deckungsgleich`, 'ok'); }
+        else logLine(`  ✓ Drehung ${rotation.toFixed(2)}°${flip ? ' · gespiegelt' : ''} · Sicherheit ${(res.ncc * 100).toFixed(0)} % / ×${res.ratio.toFixed(1)}`, 'ok');
       } else {
         overlay(null);
         logLine(`  ✗ ${esc(res.reason)}`, 'err');
         setState('Rückfrage');
-        const choice = await askContinue(res.reason, prof);
+        const choice = await askContinue(res.reason, prof, st.type);
         if (!alive()) return;
         if (choice === 'cancel') { logLine('Abgebrochen.', 'warn'); setState('abgebrochen'); return; }
+        if (choice === 'retry') { if (await askIntake()) processImage(); else setState('abgebrochen'); return; }
         if (choice === 'field') {
           const fr = fieldRotation(prof);
           rotation = fr.rotation; flip = fr.flip; method = 'field';
@@ -273,11 +386,19 @@
       // Flecken erkennen & zuordnen
       overlay(null);
       if (method !== 'none') {
-        logLine('▸ Flecken erkennen  (Kontrast gegen Ring-Median, Zusammenhangskomponenten)');
-        const spots = await compute('spots', { gray: gray.slice(), w: wc.width, h: wc.height, disc: dWork, rotation, flip, opts: { grid: 520, threshold: st.mode === 'ca' ? -0.38 : -0.14 } });
+        let spots;
+        if (st.type === 'surface') {
+          logLine('▸ Flecken erkennen  (Kontrast gegen lokale Umgebung)');
+          const blobs = await compute('blobs', { gray: gray.slice(), w: wc.width, h: wc.height, opts: { radius: 30 / scaleWork, threshold: st.mode === 'ca' ? -0.3 : -0.18, minPixels: 3 } });
+          const rArc = rsunArc;
+          spots = blobs.map((b) => { const p = mapToSun(b.u, b.v, dWork, rotation, flip); const px2 = (scaleWork / rArc) ** 2; return { x: p.x, y: p.y, pixels: b.pixels, areaMSH: (b.pixels * px2 / Math.PI / 2) * 1e6, contrast: b.contrast }; });
+        } else {
+          logLine('▸ Flecken erkennen  (Kontrast gegen Ring-Median, Zusammenhangskomponenten)');
+          spots = await compute('spots', { gray: gray.slice(), w: wc.width, h: wc.height, disc: dWork, rotation, flip, opts: { grid: Math.min(1400, Math.max(520, Math.round(dWork.r * 2))), threshold: st.mode === 'ca' ? -0.38 : -0.14 } });
+        }
         if (!alive()) return;
         st.spotsTotal = spots.length;
-        const m = AL.matchSpots(spots, st.regions.filter((r) => r.type === 'spots' || st.mode === 'ca'));
+        const m = AL.matchSpots(spots, st.regions.filter((r) => r.type === 'spots' || st.mode === 'ca'), st.type === 'surface' ? 0.06 : 0.12);
         st.groups = m.matched; st.extra = st.mode === 'ca' ? [] : m.extra; // im Ca-Licht sind dunkle Zellen des Netzwerks keine Flecken
         logLine(`  ✓ ${spots.length} Flecken/Poren erkannt`, 'ok');
         for (const g of st.groups) {
@@ -316,13 +437,14 @@
   }
 
   /* ---------------- Rückfrage ---------------- */
-  function askContinue(reason, prof) {
+  function askContinue(reason, prof, type = 'full') {
     return new Promise((resolve) => {
       $('#dlgText').textContent = reason;
-      const hasHist = (prof.history || []).length > 0;
+      const hasHist = (prof.history || []).length > 0 && type !== 'surface';
       const btns = [
+        type === 'surface' && ['retry', 'Einordnung prüfen', 'Datum, Uhrzeit und Bildmaßstab korrigieren und erneut starten.'],
         hasHist && ['field', 'Letzte Ausrichtung fortschreiben', `Drehung aus deiner letzten Aufnahme, korrigiert um die Bildfeldrotation (${st.cfg.location.mount === 'altaz' ? 'azimutal' : 'parallaktisch'}).`],
-        ['manual', 'Manuell ausrichten', 'Mit Regler drehen und spiegeln, Gradnetz und Beschriftung als Kontrolle.'],
+        type !== 'surface' && ['manual', 'Manuell ausrichten', 'Mit Regler drehen und spiegeln, Gradnetz und Beschriftung als Kontrolle.'],
         ['none', 'Ohne Ausrichtung fortfahren', 'Bild bleibt wie aufgenommen, ohne Regionsbeschriftung.'],
         ['cancel', 'Abbrechen', ''],
       ].filter(Boolean);
@@ -354,36 +476,88 @@
   $('#legendChk').addEventListener('change', () => { if (st.align) renderPreview(); });
   $('#gridChk').addEventListener('change', () => { if (st.align) renderPreview(); });
 
+  /**
+   * Ausgabe zeichnen. Ganze Sonne: quadratisch um die Scheibe. Ausschnitt/Oberfläche: das gedrehte Bild selbst.
+   * Die Geometrie {cx, cy, r} beschreibt die Sonnenmitte im Ausgabebild (bei Ausschnitten oft außerhalb).
+   */
   function renderOutput(srcCv, disc, opt) {
     const al = st.align || { rotation: 0, flip: false, method: 'none' };
-    const r = disc.r, S = Math.round(Math.min(9000, r * 2.3));
-    const L = opt.legend ? Math.round(S * 0.46) : 0;
-    const cv = document.createElement('canvas'); cv.width = S + L; cv.height = S;
+    const type = st.type || 'full';
+    const noDisc = !disc;
+    const rot = al.rotation * D2R, cR = Math.cos(rot), sR = Math.sin(rot);
+    const T = (u, v) => { let dx = u - (disc ? disc.cx : srcCv.width / 2); const dy = v - (disc ? disc.cy : srcCv.height / 2); if (al.flip) dx = -dx; return [dx * cR - dy * sR, dx * sR + dy * cR]; };
+    let W, H, ox, oy;
+    if (type === 'full' && !noDisc) { W = H = Math.round(disc.r * 2.3); ox = oy = W / 2; }
+    else {
+      const cs = [[0, 0], [srcCv.width, 0], [0, srcCv.height], [srcCv.width, srcCv.height]].map(([u, v]) => T(u, v));
+      const minX = Math.min(...cs.map((c) => c[0])), maxX = Math.max(...cs.map((c) => c[0])), minY = Math.min(...cs.map((c) => c[1])), maxY = Math.max(...cs.map((c) => c[1]));
+      W = Math.round(maxX - minX); H = Math.round(maxY - minY); ox = -minX; oy = -minY;
+    }
+    const z = Math.min(1, 9000 / Math.max(W, H));
+    W = Math.round(W * z); H = Math.round(H * z);
+    const fs = type === 'full' && !noDisc ? Math.max(11, Math.round(disc.r * z * 0.042)) : Math.max(12, Math.round(Math.min(W, H) * 0.024));
+    const L = opt.legend ? Math.max(Math.round(H * 0.46), Math.round(fs * 24)) : 0;
+    const cv = document.createElement('canvas'); cv.width = W + L; cv.height = H;
     const x = cv.getContext('2d');
-    x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, S);
-    x.save(); x.translate(S / 2, S / 2); x.rotate(al.rotation * D2R); if (al.flip) x.scale(-1, 1); x.translate(-disc.cx, -disc.cy); x.drawImage(srcCv, 0, 0); x.restore();
-    const c = S / 2, fs = Math.max(11, Math.round(r * 0.042)), mono = '"SF Mono", Menlo, monospace';
+    x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, H);
+    x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
+    x.translate(ox * z, oy * z); x.scale(z, z); x.rotate(rot); if (al.flip) x.scale(-1, 1); x.translate(-(disc ? disc.cx : srcCv.width / 2), -(disc ? disc.cy : srcCv.height / 2)); x.drawImage(srcCv, 0, 0);
+    x.restore();
+    const geom = { cx: ox * z, cy: oy * z, r: disc ? disc.r * z : 0, W, H };
+    const mono = '"SF Mono", Menlo, monospace';
     const accent = st.mode === 'ca' ? '#d7c0ff' : '#f3b544';
-    if (al.method !== 'none') {
-      if (opt.grid) drawGrid(x, c, c, r);
-      x.fillStyle = '#9a958d'; x.font = `600 ${fs}px ${mono}`; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText('N', c, c - r - fs * 0.9); x.fillText('O', c - r - fs * 0.9, c); x.fillText('W', c + r + fs * 0.9, c); x.fillText('S', c, c + r + fs * 0.9);
-      drawLabels(x, c, r, fs, mono, accent);
+    if (al.method !== 'none' && disc) {
+      x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
+      if (opt.grid) drawGrid(x, geom, type === 'surface' ? 5 : 15);
+      x.restore();
+      if (type === 'full') {
+        const { cx: c, r } = geom;
+        x.fillStyle = '#9a958d'; x.font = `600 ${fs}px ${mono}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+        x.fillText('N', c, c - r - fs * 0.9); x.fillText('O', c - r - fs * 0.9, c); x.fillText('W', c + r + fs * 0.9, c); x.fillText('S', c, c + r + fs * 0.9);
+      } else { drawCompass(x, fs, mono); drawScaleBar(x, geom, fs, mono); }
+      drawLabels(x, geom, fs, mono, accent);
     }
     x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = '#b9b5ad'; x.font = `500 ${Math.round(fs * 0.85)}px ${mono}`;
-    x.fillText(`${fmt.utcDate(st.time)} ${st.time.toISOString().slice(11, 16)} UTC · ${MODE_LABEL[st.mode]}`, fs * 0.8, S - fs * 0.9);
+    x.fillText(`${fmt.utcDate(st.time)} ${st.time.toISOString().slice(11, 16)} UTC · ${MODE_LABEL[st.mode]}`, fs * 0.8, H - fs * 0.9);
     x.textAlign = 'right'; x.fillStyle = '#6f6a63';
-    x.fillText(al.method === 'none' ? 'nicht ausgerichtet' : 'N oben · O links · Solux', S - fs * 0.8, S - fs * 0.9);
-    if (L) drawLegend(x, S, L, fs, mono, accent);
+    x.fillText(al.method === 'none' ? 'nicht ausgerichtet' : 'N oben · O links · Solux', W - fs * 0.8, H - fs * 0.9);
+    if (L) drawLegend(x, W, H, L, fs, mono, accent);
     return cv;
   }
 
-  function drawGrid(x, cx, cy, r) {
-    const B0 = st.eph.B0;
-    x.save(); x.lineWidth = Math.max(1, r * 0.002);
+  function drawCompass(x, fs, mono) {
+    const L = fs * 2.6, cx = fs * 1.2 + L, cy = fs * 1.4 + L;
+    x.save(); x.strokeStyle = '#d8d3cb'; x.fillStyle = '#d8d3cb'; x.lineWidth = Math.max(1.5, fs * 0.1);
+    x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx, cy - L); x.moveTo(cx, cy); x.lineTo(cx - L, cy); x.stroke();
+    x.font = `600 ${fs}px ${mono}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText('N', cx, cy - L - fs * 0.8); x.fillText('O', cx - L - fs * 0.8, cy);
+    x.restore();
+  }
+
+  function drawScaleBar(x, g, fs, mono) {
+    const arcPerPx = (959.63 / A.sunApparent(st.time).R) / g.r;
+    const want = g.W * 0.18 * arcPerPx;
+    const nice = [5, 10, 20, 30, 60, 120, 300, 600, 900].reduce((a, b) => (Math.abs(b - want) < Math.abs(a - want) ? b : a));
+    const len = nice / arcPerPx, x1 = g.W - fs * 1.2, x0 = x1 - len, y = g.H - fs * 2.6;
+    const km = Math.round((nice * 725.3 * A.sunApparent(st.time).R) / 1000) * 1000;
+    x.save(); x.strokeStyle = '#d8d3cb'; x.lineWidth = Math.max(2, fs * 0.14);
+    x.beginPath(); x.moveTo(x0, y); x.lineTo(x1, y); x.moveTo(x0, y - fs * 0.35); x.lineTo(x0, y + fs * 0.35); x.moveTo(x1, y - fs * 0.35); x.lineTo(x1, y + fs * 0.35); x.stroke();
+    x.fillStyle = '#d8d3cb'; x.font = `500 ${Math.round(fs * 0.85)}px ${mono}`; x.textAlign = 'center'; x.textBaseline = 'bottom';
+    x.fillText(`${nice >= 60 ? nice / 60 + '′' : nice + '″'} ≈ ${km.toLocaleString('de-DE')} km`, (x0 + x1) / 2, y - fs * 0.5);
+    x.restore();
+  }
+
+  function drawGrid(x, g, step = 15) {
+    const B0 = st.eph.B0, { cx, cy, r } = g, inc = step <= 5 ? 0.25 : 2;
+    x.save(); x.lineWidth = Math.max(1, Math.min(r * 0.002, 3));
     const line = (pts) => { let pen = false; x.beginPath(); for (const p of pts) { if (!p.visible) { pen = false; continue; } const X = cx + p.x * r, Y = cy - p.y * r; pen ? x.lineTo(X, Y) : x.moveTo(X, Y); pen = true; } x.stroke(); };
-    for (let lat = -75; lat <= 75; lat += 15) { x.strokeStyle = lat === 0 ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.1)'; const pts = []; for (let l = -90; l <= 90; l += 2) pts.push(A.heliographicToDisk(lat, l, B0)); line(pts); }
-    for (let lon = -90; lon <= 90; lon += 15) { x.strokeStyle = lon === 0 ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.1)'; const pts = []; for (let b = -90; b <= 90; b += 2) pts.push(A.heliographicToDisk(b, lon, B0)); line(pts); }
+    for (let lat = -90 + step; lat < 90; lat += step) { x.strokeStyle = lat === 0 ? 'rgba(255,255,255,.24)' : 'rgba(255,255,255,.11)'; const pts = []; for (let l = -90; l <= 90; l += inc) pts.push(A.heliographicToDisk(lat, l, B0)); line(pts); }
+    for (let lon = -90; lon <= 90; lon += step) { x.strokeStyle = lon === 0 ? 'rgba(255,255,255,.24)' : 'rgba(255,255,255,.11)'; const pts = []; for (let b = -90; b <= 90; b += inc) pts.push(A.heliographicToDisk(b, lon, B0)); line(pts); }
+    if (step <= 5) {
+      // Gradbeschriftung am Bildrand für Oberflächenbilder
+      x.fillStyle = 'rgba(255,255,255,.45)'; x.font = `500 ${Math.max(10, Math.round(g.H * 0.016))}px "SF Mono", Menlo, monospace`; x.textBaseline = 'top';
+      for (let lat = -90 + step; lat < 90; lat += step) { for (let l = -90; l <= 90; l += 0.5) { const p = A.heliographicToDisk(lat, l, B0); const X = cx + p.x * r, Y = cy - p.y * r; if (p.visible && X > 4 && X < g.W * 0.25 && Y > 4 && Y < g.H - 20) { x.fillText(`${Math.abs(lat)}°${lat >= 0 ? 'N' : 'S'}`, X + 3, Y + 2); break; } } }
+    }
     x.restore();
   }
 
@@ -393,6 +567,7 @@
       const reg = g.region;
       if (reg.type !== 'spots' && st.mode !== 'ca') continue;
       if (!reg.visible) continue;
+      if (st.type !== 'full' && !g.spots.length && !inField(g)) continue; // nur Regionen im Foto
       const style = st.cfg.recordings.labelStyle;
       items.push({ x: g.x, y: g.y, text: style === 'short' || !reg.spotClass ? `AR ${reg.region}` : `AR ${reg.region} ${reg.spotClass}`, dim: !g.spots.length && reg.type === 'spots', plage: reg.type !== 'spots' });
     }
@@ -400,28 +575,50 @@
     return items;
   }
 
-  function drawLabels(x, c, r, fs, mono, accent) {
+  function drawLabels(x, g, fs, mono, accent) {
+    const { cx, cy, r, W, H } = g;
     x.font = `600 ${fs}px ${mono}`; x.textBaseline = 'middle'; x.textAlign = 'left';
-    const boxes = [];
+    const boxes = [], off = Math.min(r * 0.16, fs * 4.5), gap = Math.min(r * 0.035, fs * 0.9);
     for (const it of labelItems().sort((a, b) => b.y - a.y)) {
-      const px = c + it.x * r, py = c - it.y * r;
+      const px = cx + it.x * r, py = cy - it.y * r;
+      if (px < -fs || py < -fs || px > W + fs || py > H + fs) continue; // außerhalb des Bildausschnitts
       const tw = x.measureText(it.text).width;
-      const ang = Math.atan2(-(py - c), px - c);
-      let lx = px + Math.cos(ang) * r * 0.16, ly = py - Math.sin(ang) * r * 0.16;
+      // Richtung: bei der ganzen Sonne radial nach außen, bei Ausschnitten nach oben rechts
+      const ang = st.type === 'full' ? Math.atan2(-(py - cy), px - cx) : Math.PI / 4;
+      let lx = px + Math.cos(ang) * off, ly = py - Math.sin(ang) * off;
       const right = Math.cos(ang) >= 0;
       let bx = right ? lx + 4 : lx - tw - 4;
-      bx = Math.max(fs * 0.4, Math.min(c * 2 - tw - fs * 0.4, bx));
-      ly = Math.max(fs, Math.min(c * 2 - fs * 2, ly));
+      bx = Math.max(fs * 0.4, Math.min(W - tw - fs * 0.4, bx));
+      ly = Math.max(fs, Math.min(H - fs * 2, ly));
       for (let k = 0; k < 12 && boxes.some((b) => bx < b.x1 && bx + tw > b.x0 && ly - fs * 0.7 < b.y1 && ly + fs * 0.7 > b.y0); k++) ly += fs * 1.25 * (it.y >= 0 ? -1 : 1);
       boxes.push({ x0: bx - 2, x1: bx + tw + 2, y0: ly - fs * 0.7, y1: ly + fs * 0.7 });
       x.globalAlpha = it.dim ? 0.55 : 1;
-      x.strokeStyle = it.plage ? '#b48cff' : accent; x.lineWidth = Math.max(1, r * 0.003);
+      x.strokeStyle = it.plage ? '#b48cff' : accent; x.lineWidth = Math.max(1, fs * 0.08);
       const d0 = Math.hypot(lx - px, ly - py) || 1;
-      x.beginPath(); x.moveTo(px + ((lx - px) / d0) * r * 0.035, py + ((ly - py) / d0) * r * 0.035); x.lineTo(lx, ly); x.stroke();
+      x.beginPath(); x.moveTo(px + ((lx - px) / d0) * gap, py + ((ly - py) / d0) * gap); x.lineTo(lx, ly); x.stroke();
       x.lineWidth = Math.max(2, fs * 0.25); x.strokeStyle = 'rgba(0,0,0,.75)'; x.strokeText(it.text, bx, ly);
       x.fillStyle = it.plage ? '#c9b0ff' : accent; x.fillText(it.text, bx, ly);
       x.globalAlpha = 1;
     }
+  }
+
+  /** Liegt eine Region im Bildausschnitt? */
+  function inField(g) {
+    if (!st.disc) return false;
+    const al = st.align; let X = g.x * st.disc.r, Y = -g.y * st.disc.r;
+    const c = Math.cos(-al.rotation * D2R), s2 = Math.sin(-al.rotation * D2R);
+    let u = X * c - Y * s2; const v = X * s2 + Y * c; if (al.flip) u = -u;
+    u += st.disc.cx; const vv = v + st.disc.cy;
+    return u >= 0 && vv >= 0 && u <= st.src.width && vv <= st.src.height;
+  }
+
+  /** Bildmitte (heliografisch) und Bildfeld für Ausschnitte. */
+  function fieldInfo() {
+    if (!st.disc || st.align.method === 'none') return null;
+    const p = mapToSun(st.src.width / 2, st.src.height / 2, st.disc, st.align.rotation, st.align.flip);
+    const h = A.diskToHeliographic(p.x, p.y, st.eph.B0);
+    const arcPerPx = (959.63 / A.sunApparent(st.time).R) / st.disc.r;
+    return { loc: h ? A.formatLocation(h.lat, h.cmd) : 'außerhalb der Scheibe', w: (st.src.width * arcPerPx) / 60, h: (st.src.height * arcPerPx) / 60, scale: arcPerPx };
   }
 
   function legendLines() {
@@ -434,13 +631,17 @@
       ['m', `Sonnenhöhe ${e.alt.toFixed(1)}° · Azimut ${e.az.toFixed(0)}°`],
       ['m', `P ${e.P.toFixed(1)}°  B₀ ${e.B0.toFixed(2)}°  L₀ ${e.L0.toFixed(1)}°  CR ${e.cr}`],
       ['m', `Ausrichtung ${how}${al.method !== 'none' ? ` · ${al.rotation.toFixed(1)}°${al.flip ? ' · gespiegelt' : ''}` : ''}`],
-      ['g', ''],
+      ['m', `Bildart: ${TYPE_LABEL[st.type || 'full']}`],
     ];
+    const fi = st.type !== 'full' ? fieldInfo() : null;
+    if (fi) lines.push(['m', `Bildmitte ${fi.loc} · Feld ${fi.w.toFixed(1).replace('.', ',')}′ × ${fi.h.toFixed(1).replace('.', ',')}′ · ${fi.scale.toFixed(2).replace('.', ',')}″/px`]);
+    lines.push(['g', '']);
     if (st.groups && st.groups.length) {
       lines.push(['s', st.mode === 'ca' ? 'Aktive Regionen' : 'Fleckengruppen (NOAA)']);
       for (const g of st.groups) {
         const r = g.region;
         if (r.type !== 'spots' && st.mode !== 'ca') continue;
+        if (st.type !== 'full' && !g.spots.length && !inField(g)) continue; // nur Regionen im Bildausschnitt
         if (r.type !== 'spots') { lines.push(['a', `AR ${r.region}  Plage  ${r.location}`]); continue; }
         lines.push(['a', `AR ${r.region}  ${r.spotClass}  ${M.magSymbol(r.magClass) || '–'}  ${r.location}`]);
         lines.push(['m', `  ${r.area ?? '–'} MH · ${r.numberSpots ?? '–'} Flecken · M-Flare ${r.probs.m ?? '–'} %`]);
@@ -453,14 +654,14 @@
     return lines;
   }
 
-  function drawLegend(x, S, L, fs, mono, accent) {
-    x.fillStyle = '#0b0b0c'; x.fillRect(S, 0, L, S);
-    x.fillStyle = '#1e1e22'; x.fillRect(S, 0, Math.max(1, fs * 0.08), S);
+  function drawLegend(x, S, H, L, fs, mono, accent) {
+    x.fillStyle = '#0b0b0c'; x.fillRect(S, 0, L, H);
+    x.fillStyle = '#1e1e22'; x.fillRect(S, 0, Math.max(1, fs * 0.08), H);
     const pad = fs * 1.4, maxW = L - pad * 2; let y = pad * 1.4;
     x.textAlign = 'left'; x.textBaseline = 'alphabetic';
     const wrap = (txt, font) => { x.font = font; const out = []; let cur = ''; for (const w of txt.split(' ')) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > maxW && cur) { out.push(cur); cur = '  ' + w; } else cur = t; } out.push(cur); return out; };
     for (const [kind, text] of legendLines()) {
-      if (y > S - pad) break;
+      if (y > H - pad) break;
       let font, color, lh;
       if (kind === 'h') { font = `700 ${Math.round(fs * 1.35)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; color = '#ece8e1'; lh = fs * 1.9; }
       else if (kind === 's') { font = `600 ${Math.round(fs * 0.8)}px ${mono}`; color = '#6f6a63'; lh = fs * 1.5; }
@@ -470,7 +671,7 @@
       else if (kind === 'g') { y += fs * 0.6; continue; }
       else { font = `400 ${Math.round(fs * 0.82)}px ${mono}`; color = '#b9b5ad'; lh = fs * 1.2; }
       x.fillStyle = color;
-      for (const ln of wrap(kind === 's' ? text.toUpperCase() : text, font)) { if (y > S - pad) break; x.font = font; x.fillText(ln, S + pad, y); y += lh; }
+      for (const ln of wrap(kind === 's' ? text.toUpperCase() : text, font)) { if (y > H - pad) break; x.font = font; x.fillText(ln, S + pad, y); y += lh; }
     }
   }
 
@@ -492,9 +693,13 @@
     L.push(`Standort:       ${loc.name}  ${loc.lat.toFixed(4)}° N  ${loc.lon.toFixed(4)}° E  · Montierung ${loc.mount === 'altaz' ? 'azimutal' : 'parallaktisch'}`);
     L.push(`Sonnenstand:    Höhe ${e.alt.toFixed(1)}°  Azimut ${e.az.toFixed(1)}°  parallaktischer Winkel ${e.q.toFixed(1)}°`);
     L.push(`Orientierung:   P ${e.P.toFixed(2)}°  B0 ${e.B0.toFixed(2)}°  L0 ${e.L0.toFixed(2)}°  Carrington-Rotation ${e.cr}`);
-    L.push(`Sonnenscheibe:  Mittelpunkt (${st.disc.cx.toFixed(1)}, ${st.disc.cy.toFixed(1)}) px  Radius ${st.disc.r.toFixed(1)} px  (${(959.63 / A.sunApparent(st.time).R / st.disc.r).toFixed(3)}″/px)`);
+    L.push(`Bildart:        ${TYPE_LABEL[st.type || 'full']}${st.imgType === 'auto' ? ' (automatisch erkannt)' : ''}`);
+    if (st.disc) L.push(`Sonnenscheibe:  Mittelpunkt (${st.disc.cx.toFixed(1)}, ${st.disc.cy.toFixed(1)}) px${st.type === 'full' ? '' : ' (außerhalb/teilweise im Bild, berechnet)'}  Radius ${st.disc.r.toFixed(1)} px  (${(959.63 / A.sunApparent(st.time).R / st.disc.r).toFixed(3)}″/px)`);
+    if (st.scaleFull) L.push(`Optik:          ${st.cfg.recordings.optics.focal} mm · ${st.cfg.recordings.optics.pixel} µm · Bin ${st.cfg.recordings.optics.binning} → ${st.scaleFull.toFixed(3)}″/px`);
+    const fi = st.type !== 'full' ? fieldInfo() : null;
+    if (fi) L.push(`Bildfeld:       Mitte ${fi.loc} · ${fi.w.toFixed(1)}′ × ${fi.h.toFixed(1)}′`);
     L.push(`Ausrichtung:    ${how}${al.method !== 'none' ? `, Drehung ${al.rotation.toFixed(2)}°${al.flip ? ', gespiegelt' : ''}` : ''}`);
-    if (r && al.method === 'auto') L.push(`                Korrelation ${r.ncc.toFixed(3)}, Eindeutigkeit ×${r.ratio.toFixed(2)}, ${r.groups} Fleckengruppen in der Referenz`);
+    if (r && al.method === 'auto') L.push(st.type === 'surface' ? `                Punktmuster: ${r.inliers} Flecken deckungsgleich, Eindeutigkeit ×${r.ratio.toFixed(2)}` : `                Korrelation ${r.ncc.toFixed(3)}, Eindeutigkeit ×${r.ratio.toFixed(2)}, ${r.groups} Fleckengruppen in der Referenz`);
     if (st.ref) L.push(`Referenz:       ${st.ref.label} ${st.ref.date.toISOString().slice(0, 16).replace('T', ' ')} UTC`);
     L.push(`Ergebnis:       Norden oben, Osten links`);
     L.push('');
@@ -503,6 +708,7 @@
       L.push(`FLECKENGRUPPEN (NOAA, ${st.regionsDay ? 'SRS vom ' + st.regionsDay : 'keine Daten'})  ·  ${st.spotsTotal} Flecken/Poren im Bild erkannt`);
       L.push('-'.repeat(60));
       for (const g of spots) {
+        if (st.type !== 'full' && !g.spots.length && !inField(g)) continue;
         const reg = g.region, d = M.decode(reg.spotClass, reg.magClass), risk = M.riskOf(reg.spotClass, reg.magClass, reg.probs);
         const hel = A.diskToHeliographic(g.x, g.y, e.B0);
         L.push(`AR ${reg.region}   ${reg.spotClass.padEnd(4)} ${(M.magSymbol(reg.magClass) || '–').padEnd(4)} ${reg.location}   Fläche ${reg.area ?? '–'} MH   ${reg.numberSpots ?? '–'} Flecken (NOAA)`);

@@ -13,9 +13,8 @@
   <div class="seg" id="modeSeg" role="group" aria-label="Wellenlänge der Aufnahme"><button data-k="wl">Weißlicht</button><button data-k="ca">Kalzium</button></div>
   <span class="note" id="profileInfo"></span>
   <span class="spacer"></span>
-  <div class="field timefield"><label for="capTime">Zeit</label><input type="datetime-local" step="1" id="capTime" class="inp"></div>
-  <span class="note" id="timeSrc"></span>
-  <button class="ghost" id="rerun" disabled>Neu auswerten</button>
+  <span class="note" id="intakeInfo"></span>
+  <button class="ghost" id="intakeBtn" disabled>Einordnung …</button>
   <button class="pbtn" id="openBtn">Öffnen …</button>
 </header>
 
@@ -55,6 +54,34 @@
     <div id="saved" class="note"></div>
   </div>
 </footer>
+
+<div class="modal" id="intake" hidden>
+  <form class="dlg intake" id="intakeForm" novalidate aria-labelledby="inTitle">
+    <h2 id="inTitle">Aufnahme einordnen</h2>
+    <p class="note" id="inFile"></p>
+    <div class="row3">
+      <div class="field"><label for="inDate">Datum</label><input type="date" id="inDate" class="inp" required></div>
+      <div class="field"><label for="inTime">Uhrzeit</label><input type="time" id="inTime" class="inp" step="1" required></div>
+      <div class="field"><label for="inZone">Zeitangabe</label><select id="inZone" class="inp"><option value="local">Ortszeit (MEZ/MESZ)</option><option value="utc">UTC</option></select></div>
+    </div>
+    <p class="note" id="inSrc"></p>
+    <div class="row2">
+      <div class="field"><label>Wellenlänge</label><div class="seg" id="inMode"><button type="button" data-k="wl">Weißlicht</button><button type="button" data-k="ca">Kalzium</button></div></div>
+      <div class="field"><label for="inType">Bildart</label><select id="inType" class="inp">
+        <option value="auto">Automatisch erkennen</option><option value="full">Ganze Sonne</option><option value="partial">Ausschnitt mit Sonnenrand</option><option value="surface">Oberfläche ohne Rand (Fleckengruppe)</option></select></div>
+    </div>
+    <fieldset class="optics">
+      <legend>Bildmaßstab <span class="note">(für Ausschnitte und Oberflächenbilder)</span></legend>
+      <div class="row3">
+        <div class="field"><label for="inFocal">Brennweite mm</label><input type="number" id="inFocal" class="inp" min="50" step="any" placeholder="z. B. 2400"></div>
+        <div class="field"><label for="inPixel">Pixelgröße µm</label><input type="number" id="inPixel" class="inp" min="0.5" step="any" placeholder="z. B. 2.9"></div>
+        <div class="field"><label for="inBin">Binning</label><select id="inBin" class="inp"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+      </div>
+      <p class="note" id="inScale"></p>
+    </fieldset>
+    <div class="dlgrow"><button type="button" class="ghost" id="inCancel">Abbrechen</button><button type="submit" class="pbtn" id="inStart">Starten</button></div>
+  </form>
+</div>
 
 <div class="modal" id="modal" hidden>
   <div class="dlg" role="alertdialog" aria-labelledby="dlgTitle">
