@@ -426,7 +426,8 @@
       <div class="box" id="calBox">Lade …</div>
       ${WEB ? `<div class="field"><label for="calF">Faktor vom Mac übernehmen (leer = ohne)</label><input id="calF" type="number" min="0.5" max="2" step="0.01" value="${c.seeing && c.seeing.factor ? c.seeing.factor : ''}" placeholder="z. B. 1.12"></div>` : ''}
       <span class="lbl">Daten</span>
-      <div class="field"><label for="ref">Aktualisierung</label><select id="ref" data-p="data.refreshMinutes" data-num>${[10, 15, 30, 60].map((v) => `<option value="${v}" ${c.data.refreshMinutes === v ? 'selected' : ''}>alle ${v} Minuten</option>`).join('')}</select></div>
+      <div class="field"><label for="ref">Aktualisierung</label><select id="ref" data-p="data.refreshMinutes" data-num>${(WEB ? [15, 30, 60] : [10, 15, 30, 60]).map((v) => `<option value="${v}" ${c.data.refreshMinutes === v ? 'selected' : ''}>alle ${v} Minuten</option>`).join('')}</select></div>
+      ${WEB ? '<p class="note">Gilt, solange Solux mobil geöffnet ist. Push-Mitteilungen kommen unabhängig davon im 15-Minuten-Takt.</p>' : ''}
       <div class="box" id="storeBox">Lade Speicherinfo …</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" id="refNow">Jetzt aktualisieren</button>${WEB ? '' : '<button class="ghost" id="clrImg">Bild-Zwischenspeicher leeren</button><button class="ghost" id="logBtn">Protokoll zeigen</button>'}</div>
       <p class="note">Quellen: Sonnenbilder NASA SDO und NSO/GONG über Helioviewer · Regionen, Flares, Kp, Meldungen NOAA SWPC${WEB ? ' (ca. 30 Tage online)' : ' (lokal 60 Tage gesammelt, ältere Tage aus dem NOAA-Archiv)'} · Wetter Open-Meteo.</p>`,

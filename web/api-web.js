@@ -8,7 +8,7 @@
 (() => {
   'use strict';
   const SW = window.SoluxSW, S = window.SoluxSeeing;
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.1';
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -26,6 +26,8 @@
     general: {}, notify: {}, recordings: {}, profiles: {}, update: { repo: 'ziege1988/Solux' },
   };
   let cfg = merge(DEF, LS.get('config', {}));
+  // Kürzer als 15 Minuten ist am Handy nicht sinnvoll (Push-Takt, Datenquellen) – alte Einstellung anheben
+  if (!(cfg.data.refreshMinutes >= 15)) { cfg.data.refreshMinutes = 15; LS.set('config', cfg); }
 
   const listeners = {};
   const emit = (ch, p) => (listeners[ch] || []).forEach((f) => { try { f(p); } catch (e) { console.error(e); } });
@@ -188,5 +190,10 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && sw && Date.now() - new Date(sw.updated).getTime() > 5 * 60000) { wcache = null; refresh().catch(() => {}); }
   });
-  setInterval(() => { if (document.visibilityState === 'visible') refresh().catch(() => {}); }, 15 * 60000);
+  // Aktualisierung im eingestellten Takt (15/30/60 Minuten), nur solange die App sichtbar ist
+  let lastAuto = Date.now();
+  setInterval(() => {
+    const every = Math.max(15, cfg.data.refreshMinutes || 15) * 60000;
+    if (document.visibilityState === 'visible' && Date.now() - lastAuto >= every) { lastAuto = Date.now(); wcache = null; refresh().catch(() => {}); }
+  }, 60000);
 })();
