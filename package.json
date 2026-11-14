@@ -34,7 +34,7 @@
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "Solux-${version}-mac-${arch}.${ext}",
+      "artifactName": "Solux-mac-${arch}.${ext}",
       "extendInfo": {
         "NSHumanReadableCopyright": "Bilddaten: NASA/SDO via Helioviewer · Weltraumwetter: NOAA SWPC · Wetter: Open-Meteo"
       }

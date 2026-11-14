@@ -64,8 +64,8 @@ Kalibrierfaktor für deinen Hof.
 1. Im Repository unter **Actions → „Solux bauen“ → Run workflow** einen Build starten, oder einen
    Versions-Tag pushen (siehe „Neue Version veröffentlichen“).
 2. Unter **Releases** (bzw. im Artefakt des Workflow-Laufs) die passende Datei laden:
-   - Apple Silicon (M1/M2/M3/M4): `Solux-<version>-mac-arm64.dmg`
-   - Intel-Mac: `Solux-<version>-mac-x64.dmg`
+   - Apple Silicon (M1/M2/M3/M4): `Solux-mac-arm64.dmg`
+   - Intel-Mac: `Solux-mac-x64.dmg`
 3. DMG öffnen und Solux in den Ordner **Programme** ziehen.
 4. **Erster Start:** Solux ist nicht von Apple notarisiert, weil es nur für dich gedacht ist. macOS meldet
    deshalb, dass die App nicht geprüft werden kann. Einmalig freigeben:
@@ -79,7 +79,7 @@ git clone https://github.com/ziege1988/Solux.git
 cd Solux
 npm install
 npm start            # direkt starten (Entwicklungsmodus)
-npm run dist         # App bauen -> dist/Solux-…-mac-arm64.dmg / -x64.dmg
+npm run dist         # App bauen -> dist/Solux-mac-arm64.dmg / Solux-mac-x64.dmg
 ```
 
 ## Erste Einrichtung
