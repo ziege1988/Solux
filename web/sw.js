@@ -12,9 +12,9 @@ self.addEventListener('message', (e) => { if (e.data === 'skipWaiting') self.ski
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Sonnen- und Wetterdaten nicht zwischenspeichern
-  // Netz zuerst (immer aktuelle Version), bei fehlendem Netz aus dem Speicher
+  // Netz zuerst und am HTTP-Zwischenspeicher vorbei nachfragen (immer aktuelle Version), ohne Netz aus dem Speicher
   e.respondWith(
-    fetch(e.request).then((res) => { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); return res; })
+    fetch(e.request, { cache: 'no-cache' }).then((res) => { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); return res; })
       .catch(() => caches.match(e.request).then((r) => r || caches.match('index.html'))),
   );
 });

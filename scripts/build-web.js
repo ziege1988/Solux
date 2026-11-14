@@ -23,5 +23,9 @@ for (const f of fs.readdirSync(path.join(root, 'web'), { recursive: true })) {
 const sw = path.join(out, 'sw.js');
 const build = process.env.GITHUB_SHA ? process.env.GITHUB_SHA.slice(0, 8) : Date.now().toString(36);
 fs.writeFileSync(sw, fs.readFileSync(sw, 'utf8').replace('__BUILD__', build));
+// Laufende App erkennt neue Versionen über version.json (ohne Zwischenspeicher abgefragt)
+const pwa = path.join(out, 'pwa.js');
+fs.writeFileSync(pwa, fs.readFileSync(pwa, 'utf8').replace('__BUILD__', build));
+fs.writeFileSync(path.join(out, 'version.json'), JSON.stringify({ build }));
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
 console.log('Web-App gebaut:', out, '· Version', build);
