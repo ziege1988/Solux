@@ -1,0 +1,43 @@
+# Baut Solux auf einem Mac-Runner und veröffentlicht ein GitHub-Release.
+# Auslöser: ein Tag wie v1.0.1 (git tag v1.0.1 && git push origin v1.0.1)
+# oder manuell über „Run workflow“ (dann nur als Download-Artefakt).
+name: Solux bauen
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Version aus dem Tag übernehmen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+      - name: App bauen (Apple Silicon + Intel)
+        run: npx electron-builder --mac zip dmg --arm64 --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Solux-mac
+          path: |
+            dist/*.zip
+            dist/*.dmg
+      - name: Release veröffentlichen
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.dmg
+          generate_release_notes: true

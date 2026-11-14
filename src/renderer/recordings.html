@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:">
+<title>Solux · Aufnahmen</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="recordings.css">
+</head>
+<body>
+<header class="bar">
+  <h1>Aufnahmen</h1>
+  <div class="seg" id="modeSeg" role="group" aria-label="Wellenlänge der Aufnahme"><button data-k="wl">Weißlicht</button><button data-k="ca">Kalzium</button></div>
+  <span class="note" id="profileInfo"></span>
+  <span class="spacer"></span>
+  <div class="field timefield"><label for="capTime">Zeit</label><input type="datetime-local" step="1" id="capTime" class="inp"></div>
+  <span class="note" id="timeSrc"></span>
+  <button class="ghost" id="rerun" disabled>Neu auswerten</button>
+  <button class="pbtn" id="openBtn">Öffnen …</button>
+</header>
+
+<main class="main">
+  <section class="drop" id="drop" aria-label="Aufnahme hier ablegen">
+    <div class="stage" id="stage">
+      <canvas id="viewCv" width="900" height="900"></canvas>
+      <canvas id="ovCv" class="ov" width="900" height="900"></canvas>
+    </div>
+    <div class="empty" id="empty">
+      <div class="ring"></div>
+      <p><b>Sonnenaufnahme hierher ziehen</b><br><span class="note">JPEG oder TIFF · Weißlicht oder Kalzium</span></p>
+    </div>
+    <div class="manual" id="manual" hidden>
+      <span class="lbl">Manuell ausrichten</span>
+      <input type="range" id="manRot" min="-180" max="180" step="0.1" value="0" aria-label="Drehung">
+      <input type="number" id="manRotNum" class="inp" step="0.1" value="0" aria-label="Drehung in Grad">
+      <label class="chk"><input type="checkbox" id="manFlip"> gespiegelt</label>
+      <button class="pbtn" id="manOk">Übernehmen</button>
+    </div>
+  </section>
+
+  <section class="log">
+    <div class="hd"><h3>Prozessablauf</h3><span class="note" id="logState">bereit</span></div>
+    <pre id="logPre" aria-live="polite"></pre>
+    <div class="curve"><span class="lbl">Korrelation über 360°</span><svg id="curveSvg" viewBox="0 0 300 70" preserveAspectRatio="none"></svg></div>
+  </section>
+</main>
+
+<footer class="bottom">
+  <div class="txtwrap"><div class="hd"><h3>Textdatei</h3><span class="note" id="txtName"></span></div><pre class="txt" id="txtOut">Noch keine Auswertung.</pre></div>
+  <div class="save">
+    <label class="chk"><input type="checkbox" id="legendChk"> Legende am rechten Bildrand</label>
+    <label class="chk"><input type="checkbox" id="gridChk"> Gradnetz einzeichnen</label>
+    <div class="field"><label>Zielordner</label><div class="folder"><span id="folder" class="note">–</span><button class="ghost" id="folderBtn">Ändern …</button></div></div>
+    <div class="row"><button class="pbtn" id="saveBtn" disabled>Speichern</button><span class="note" id="saveInfo">JPEG + Textdatei</span></div>
+    <div id="saved" class="note"></div>
+  </div>
+</footer>
+
+<div class="modal" id="modal" hidden>
+  <div class="dlg" role="alertdialog" aria-labelledby="dlgTitle">
+    <h2 id="dlgTitle">Ausrichten nicht möglich</h2>
+    <p id="dlgText"></p>
+    <p class="note">Trotzdem fortfahren?</p>
+    <div class="dlgbtns" id="dlgBtns"></div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="../shared/astro.js"></script>
+<script src="../shared/mcintosh.js"></script>
+<script src="../shared/align.js"></script>
+<script src="common.js"></script>
+<script src="recordings.js"></script>
+</body>
+</html>

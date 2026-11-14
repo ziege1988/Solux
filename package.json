@@ -1,0 +1,44 @@
+{
+  "name": "solux",
+  "productName": "Solux",
+  "version": "1.0.0",
+  "description": "Sonnen-Widget für den Mac: aktuelle Sonne, Beobachtungsbedingungen und automatische Auswertung eigener Aufnahmen.",
+  "main": "src/main/main.js",
+  "author": "Solux",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "icons": "node scripts/make-icons.js",
+    "dist": "electron-builder --mac zip dmg --arm64 --x64 --publish never"
+  },
+  "dependencies": {
+    "exifr": "7.1.3",
+    "utif": "3.1.0"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "de.solux.app",
+    "productName": "Solux",
+    "copyright": "Solux",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["src/**/*", "build/tray*.png", "build/icon.png", "package.json", "node_modules/**/*"],
+    "afterPack": "scripts/after-pack.js",
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "Solux-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSHumanReadableCopyright": "Bilddaten: NASA/SDO via Helioviewer · Weltraumwetter: NOAA SWPC · Wetter: Open-Meteo"
+      }
+    },
+    "dmg": { "title": "Solux ${version}" }
+  }
+}
