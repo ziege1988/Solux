@@ -7,7 +7,7 @@ const DEFAULTS = {
   widget: { x: null, y: null, alwaysOnTop: false, opacity: 1, scale: 1, showSplash: true, kind: 'wl', visible: true },
   general: { openAtLogin: true },
   data: { refreshMinutes: 15 },
-  recordings: { lastMode: 'wl', folder: null, jpegQuality: 95, legend: true, labelStyle: 'full', grid: true, cameraTime: 'local' },
+  recordings: { export: { text: 'list', scale: 'none', labels: true, grid: true, flares: false, format: 'jpeg', quality: 95, txt: true }, lastMode: 'wl', folder: null, jpegQuality: 95, legend: true, labelStyle: 'full', grid: true, cameraTime: 'local' },
   profiles: {
     wl: { name: 'Refraktor + Herschelkeil (Weißlicht)', flip: null, sigma: 1, history: [] },
     ca: { name: 'Refraktor + Ca-K (Kalzium)', flip: null, sigma: 1, history: [] },

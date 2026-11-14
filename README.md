@@ -43,8 +43,16 @@ beschriftet und mit Legende und Textdatei gespeichert.
   - manuell ausrichten
   - ohne Ausrichtung weiter
 - Beschriftung mit NOAA-Nummer und McIntosh-Klasse, optional mit heliografischem Gradnetz
-- **Speichern**: JPEG in einstellbarer Qualität (Standard 95 %) plus Textdatei. Die Legende am rechten
-  Bildrand lässt sich per Haken an- oder abwählen.
+- **Text neben dem Bild:** kein Text, **Liste** aller Regionen oder **Zusammenfassung** der aktivsten Regionen
+  (Fazit, Größe in Erdscheiben, Lage, Fleckenzahl)
+- **Entfernungsskala** (ganze Sonne):
+  - Höhenringe 50.000 / 100.000 / 150.000 km
+  - Kranz mit Strichen alle 5° und 30°
+  - Höhenlineale Ost–West, wahlweise **außen** oder **durchgehend** über die Scheibe
+  - Maßstab aus dem gemessenen Sonnenradius (≙ 696.000 km)
+  - Reicht das Bild nicht aus, wird der Himmel mit passender Farbe und Körnung unauffällig erweitert.
+- **Export-Dialog:** Text, Skala, Beschriftung, Gradnetz, Flares des Tages, **JPEG** (90/95/100) oder
+  **TIFF** (verlustfrei), Textdatei ja oder nein. Vorschau von Dateiname, Größe und Ordner.
 
 ## Solux mobil (iPhone)
 

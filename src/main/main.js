@@ -271,14 +271,20 @@ function registerIpc() {
     config.set({ recordings: { folder: r.filePaths[0] } });
     return r.filePaths[0];
   });
-  ipcMain.handle('rec:save', async (_e, { folder, baseName, jpeg, txt }) => {
+  ipcMain.handle('rec:save', async (_e, { folder, baseName, jpeg, tiff, txt }) => {
     folder = folder || config.get().recordings.folder;
     if (!folder) throw new Error('Kein Zielordner gewählt.');
     fs.mkdirSync(folder, { recursive: true });
+    const ext = tiff ? '.tif' : '.jpg';
     let base = baseName, n = 1;
-    while (fs.existsSync(path.join(folder, base + '.jpg'))) base = `${baseName}_${++n}`;
-    const jpgPath = path.join(folder, base + '.jpg');
-    fs.writeFileSync(jpgPath, Buffer.from(jpeg));
+    while (fs.existsSync(path.join(folder, base + ext))) base = `${baseName}_${++n}`;
+    const jpgPath = path.join(folder, base + ext);
+    if (tiff) {
+      // verlustfreies TIFF (RGB, 8 Bit je Kanal)
+      const UTIF = require('utif');
+      const rgba = new Uint8Array(tiff.rgba.buffer || tiff.rgba, tiff.rgba.byteOffset || 0, tiff.w * tiff.h * 4);
+      fs.writeFileSync(jpgPath, Buffer.from(UTIF.encodeImage(rgba, tiff.w, tiff.h)));
+    } else fs.writeFileSync(jpgPath, Buffer.from(jpeg));
     let txtPath = null;
     if (txt) { txtPath = path.join(folder, base + '.txt'); fs.writeFileSync(txtPath, txt, 'utf8'); }
     return { jpgPath, txtPath };

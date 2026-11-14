@@ -47,10 +47,10 @@
 <footer class="bottom">
   <div class="txtwrap"><div class="hd"><h3>Textdatei</h3><span class="note" id="txtName"></span></div><pre class="txt" id="txtOut">Noch keine Auswertung.</pre></div>
   <div class="save">
-    <label class="chk"><input type="checkbox" id="legendChk"> Legende am rechten Bildrand</label>
-    <label class="chk"><input type="checkbox" id="gridChk"> Gradnetz einzeichnen</label>
-    <div class="field"><label>Zielordner</label><div class="folder"><span id="folder" class="note">–</span><button class="ghost" id="folderBtn">Ändern …</button></div></div>
-    <div class="row"><button class="pbtn" id="saveBtn" disabled>Speichern</button><span class="note" id="saveInfo">JPEG + Textdatei</span></div>
+    <div class="field"><label>Text neben dem Bild</label><div class="seg" id="optText"><button data-v="none">Kein</button><button data-v="list">Liste</button><button data-v="summary">Zusammenfassung</button></div></div>
+    <div class="field"><label>Entfernungsskala (ganze Sonne)</label><div class="seg" id="optScale"><button data-v="none">Aus</button><button data-v="out">außen</button><button data-v="through">durchgehend</button></div></div>
+    <label class="chk"><input type="checkbox" id="gridChk"> Heliografisches Gradnetz</label>
+    <div class="row"><button class="pbtn" id="saveBtn" disabled>Exportieren …</button><span class="note" id="saveInfo"></span></div>
     <div id="saved" class="note"></div>
   </div>
 </footer>
@@ -81,6 +81,26 @@
       <p class="note" id="inScale"></p>
     </fieldset>
     <div class="dlgrow"><button type="button" class="ghost" id="inCancel">Abbrechen</button><button type="submit" class="pbtn" id="inStart">Starten</button></div>
+  </form>
+</div>
+
+<div class="modal" id="exportDlg" hidden>
+  <form class="dlg export" id="exportForm" novalidate>
+    <h2>Exportieren</h2>
+    <div class="grp"><span class="gl">Text neben dem Bild</span><div class="seg big" id="exText"><button type="button" data-v="none">Kein Text</button><button type="button" data-v="list">Bezeichnungen</button><button type="button" data-v="summary">Zusammenfassung</button></div></div>
+    <div class="grp"><span class="gl">Entfernungsskala (nur ganze Sonne)</span><div class="seg big" id="exScale"><button type="button" data-v="none">Aus</button><button type="button" data-v="out">Ost–West außen</button><button type="button" data-v="through">Ost–West durchgehend</button></div>
+      <span class="sub">Höhenringe 50 / 100 / 150 Tsd. km, Kranz mit Strichen alle 5° · Hintergrund wird bei Bedarf unauffällig erweitert</span></div>
+    <div class="grp"><span class="gl">Im Bild</span>
+      <label class="chk"><input type="checkbox" id="exLabels"> Regionsbeschriftung (AR + Klasse)</label>
+      <label class="chk"><input type="checkbox" id="exGrid"> Heliografisches Gradnetz</label>
+      <label class="chk"><input type="checkbox" id="exFlares"> Flares des Tages markieren</label></div>
+    <div class="row2">
+      <div class="grp"><span class="gl">Format</span><div class="seg big" id="exFormat"><button type="button" data-v="jpeg">JPEG</button><button type="button" data-v="tiff">TIFF (verlustfrei)</button></div></div>
+      <div class="grp" id="exQGrp"><span class="gl">JPEG-Qualität</span><div class="seg big" id="exQ"><button type="button" data-v="90">90</button><button type="button" data-v="95">95</button><button type="button" data-v="100">100</button></div></div>
+    </div>
+    <label class="chk"><input type="checkbox" id="exTxt"> Textdatei (.txt) mitspeichern</label>
+    <div class="prev" id="exPrev"></div>
+    <div class="dlgrow"><button type="button" class="ghost" id="exFolderBtn">Ordner ändern …</button><span class="spacer"></span><button type="button" class="ghost" id="exCancel">Abbrechen</button><button type="submit" class="pbtn" id="exGo">Exportieren</button></div>
   </form>
 </div>
 

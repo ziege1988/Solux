@@ -8,7 +8,7 @@
 (() => {
   'use strict';
   const SW = window.SoluxSW, S = window.SoluxSeeing;
-  const VERSION = '1.3.1';
+  const VERSION = '1.4.0';
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },

@@ -44,9 +44,8 @@
   async function init() {
     st.cfg = await api.getConfig();
     setMode(st.cfg.recordings.lastMode || 'wl', false);
-    $('#legendChk').checked = !!st.cfg.recordings.legend;
-    $('#gridChk').checked = !!st.cfg.recordings.grid;
-    $('#folder').textContent = st.cfg.recordings.folder || 'wird beim Speichern gewählt';
+    st.exp = { text: 'list', scale: 'none', labels: true, grid: true, flares: false, format: 'jpeg', quality: 95, txt: true, ...(st.cfg.recordings.export || {}) };
+    syncOptBar();
     updateProfileInfo();
   }
 
@@ -404,6 +403,7 @@
       const dtMin = Math.round((st.ref.date - st.time) / 60000);
       logLine(`  ✓ ${refImg.label}  ${st.ref.date.toISOString().slice(0, 16).replace('T', ' ')} UTC  (Δt ${dtMin >= 0 ? '+' : ''}${dtMin} min)`, Math.abs(dtMin) > 180 ? 'warn' : 'ok');
       st.regions = reg.regions || []; st.regionsDay = reg.day;
+      try { st.dayFlares = (await api.flares(st.time.getTime() - 36 * 3600000)) || []; } catch { st.dayFlares = []; }
       if (reg.day) logLine(`▸ NOAA-Regionen  ${st.regions.filter((r) => r.type === 'spots').length} Fleckengruppen, ${st.regions.filter((r) => r.type !== 'spots').length} Plages  (SRS gültig ${reg.validAt.slice(0, 10)} 00 UT, auf Aufnahmezeit gedreht)`);
       else logLine('▸ NOAA-Regionen  für dieses Datum nicht im lokalen Speicher (60 Tage) – Beschriftung nur mit erkannten Flecken.', 'warn');
 
@@ -550,25 +550,31 @@
   /* ---------------- Ausgabe zeichnen ---------------- */
   function renderPreview() {
     const w = st.work;
-    const cv = renderOutput(w.canvas, w.disc, { legend: $('#legendChk').checked, grid: $('#gridChk').checked });
+    const cv = renderOutput(w.canvas, w.disc, st.exp, w.k);
     st.preview = cv;
     showCanvas(cv);
   }
-  $('#legendChk').addEventListener('change', () => { if (st.align) renderPreview(); });
-  $('#gridChk').addEventListener('change', () => { if (st.align) renderPreview(); });
+  /* Bedienleiste: Text, Skala, Gradnetz – wirkt sofort auf die Vorschau und wird gemerkt */
+  function setSeg(id, v) { document.querySelectorAll(`#${id} button`).forEach((b) => b.classList.toggle('on', b.dataset.v === String(v))); }
+  function syncOptBar() { setSeg('optText', st.exp.text); setSeg('optScale', st.exp.scale); $('#gridChk').checked = !!st.exp.grid; }
+  function setExp(patch) { Object.assign(st.exp, patch); api.setConfig({ recordings: { export: st.exp } }); syncOptBar(); if (st.align) renderPreview(); }
+  $('#optText').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setExp({ text: b.dataset.v }); });
+  $('#optScale').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setExp({ scale: b.dataset.v }); });
+  $('#gridChk').addEventListener('change', () => setExp({ grid: $('#gridChk').checked }));
 
   /**
    * Ausgabe zeichnen. Ganze Sonne: quadratisch um die Scheibe. Ausschnitt/Oberfläche: das gedrehte Bild selbst.
    * Die Geometrie {cx, cy, r} beschreibt die Sonnenmitte im Ausgabebild (bei Ausschnitten oft außerhalb).
    */
-  function renderOutput(srcCv, disc, opt) {
+  function renderOutput(srcCv, disc, opt, kScale = 1) {
     const al = st.align || { rotation: 0, flip: false, method: 'none' };
     const type = st.type || 'full';
     const noDisc = !disc;
     const rot = al.rotation * D2R, cR = Math.cos(rot), sR = Math.sin(rot);
     const T = (u, v) => { let dx = u - (disc ? disc.cx : srcCv.width / 2); const dy = v - (disc ? disc.cy : srcCv.height / 2); if (al.flip) dx = -dx; return [dx * cR - dy * sR, dx * sR + dy * cR]; };
     let W, H, ox, oy;
-    if (type === 'full' && !noDisc) { W = H = Math.round(disc.r * 2.3); ox = oy = W / 2; }
+    const withScale = type === 'full' && !noDisc && opt.scale && opt.scale !== 'none' && al.method !== 'none';
+    if (type === 'full' && !noDisc) { W = H = Math.round(disc.r * (withScale ? 2.78 : 2.3)); ox = oy = W / 2; }
     else {
       const cs = [[0, 0], [srcCv.width, 0], [0, srcCv.height], [srcCv.width, srcCv.height]].map(([u, v]) => T(u, v));
       const minX = Math.min(...cs.map((c) => c[0])), maxX = Math.max(...cs.map((c) => c[0])), minY = Math.min(...cs.map((c) => c[1])), maxY = Math.max(...cs.map((c) => c[1]));
@@ -577,12 +583,17 @@
     const z = Math.min(1, 9000 / Math.max(W, H));
     W = Math.round(W * z); H = Math.round(H * z);
     const fs = type === 'full' && !noDisc ? Math.max(11, Math.round(disc.r * z * 0.042)) : Math.max(12, Math.round(Math.min(W, H) * 0.024));
-    const L = opt.legend ? Math.max(Math.round(H * 0.46), Math.round(fs * 24)) : 0;
+    const textMode = opt.text || 'none';
+    const L = textMode !== 'none' ? Math.max(Math.round(H * 0.46), Math.round(fs * 24)) : 0;
     const cv = document.createElement('canvas'); cv.width = W + L; cv.height = H;
     const x = cv.getContext('2d');
     x.fillStyle = '#000'; x.fillRect(0, 0, cv.width, H);
+    // Ganze Sonne: Himmel mit passender Farbe/Körnung erweitern und das Foto weich einblenden – die Erweiterung fällt nicht auf
+    const sky = type === 'full' && disc ? skyStats(srcCv, disc) : null;
+    if (sky) fillSky(x, W, H, sky);
     x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
-    x.translate(ox * z, oy * z); x.scale(z, z); x.rotate(rot); if (al.flip) x.scale(-1, 1); x.translate(-(disc ? disc.cx : srcCv.width / 2), -(disc ? disc.cy : srcCv.height / 2)); x.drawImage(srcCv, 0, 0);
+    x.translate(ox * z, oy * z); x.scale(z, z); x.rotate(rot); if (al.flip) x.scale(-1, 1); x.translate(-(disc ? disc.cx : srcCv.width / 2), -(disc ? disc.cy : srcCv.height / 2));
+    x.drawImage(sky ? feathered(srcCv, Math.max(6, Math.round(disc.r * 0.025))) : srcCv, 0, 0);
     x.restore();
     const geom = { cx: ox * z, cy: oy * z, r: disc ? disc.r * z : 0, W, H };
     const mono = '"SF Mono", Menlo, monospace';
@@ -591,19 +602,127 @@
       x.save(); x.beginPath(); x.rect(0, 0, W, H); x.clip();
       if (opt.grid) drawGrid(x, geom, type === 'surface' ? 5 : 15);
       x.restore();
-      if (type === 'full') {
+      if (withScale) drawDistanceScale(x, geom, fs, opt.scale === 'through');
+      else if (type === 'full') {
         const { cx: c, r } = geom;
         x.fillStyle = '#9a958d'; x.font = `600 ${fs}px ${mono}`; x.textAlign = 'center'; x.textBaseline = 'middle';
         x.fillText('N', c, c - r - fs * 0.9); x.fillText('O', c - r - fs * 0.9, c); x.fillText('W', c + r + fs * 0.9, c); x.fillText('S', c, c + r + fs * 0.9);
       } else { drawCompass(x, fs, mono); drawScaleBar(x, geom, fs, mono); }
-      drawLabels(x, geom, fs, mono, accent);
+      if (opt.labels !== false) drawLabels(x, geom, fs, mono, accent);
+      if (opt.flares) drawDayFlares(x, geom, fs, mono);
     }
     x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = '#b9b5ad'; x.font = `500 ${Math.round(fs * 0.85)}px ${mono}`;
     x.fillText(`${fmt.utcDate(st.time)} ${st.time.toISOString().slice(11, 16)} UTC · ${MODE_LABEL[st.mode]}`, fs * 0.8, H - fs * 0.9);
     x.textAlign = 'right'; x.fillStyle = '#6f6a63';
     x.fillText(al.method === 'none' ? 'nicht ausgerichtet' : 'N oben · O links · Solux', W - fs * 0.8, H - fs * 0.9);
-    if (L) drawLegend(x, W, H, L, fs, mono, accent);
+    if (L) drawLegend(x, W, H, L, fs, mono, accent, textMode);
     return cv;
+  }
+
+  /** Mittelwert und Streuung des Himmels (außerhalb der Scheibe) – für die unauffällige Erweiterung. */
+  function skyStats(srcCv, disc) {
+    if (srcCv.__sky) return srcCv.__sky;
+    const n = 200, f = n / Math.max(srcCv.width, srcCv.height), w = Math.round(srcCv.width * f), h = Math.round(srcCv.height * f);
+    const t = document.createElement('canvas'); t.width = w; t.height = h;
+    const tx = t.getContext('2d', { willReadFrequently: true }); tx.drawImage(srcCv, 0, 0, w, h);
+    const d = tx.getImageData(0, 0, w, h).data, acc = [[], [], []];
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+      if (Math.hypot(xx / f - disc.cx, y / f - disc.cy) < disc.r * 1.08) continue;
+      const i = (y * w + xx) * 4; acc[0].push(d[i]); acc[1].push(d[i + 1]); acc[2].push(d[i + 2]);
+    }
+    const stat = (a) => { if (!a.length) return [0, 0]; a.sort((p, q) => p - q); const m = a[a.length >> 1]; const lo = a[Math.floor(a.length * 0.16)], hi = a[Math.floor(a.length * 0.84)]; return [m, (hi - lo) / 2]; };
+    const res = acc.map(stat);
+    srcCv.__sky = { mean: res.map((r) => r[0]), std: res.map((r) => Math.min(25, r[1])) };
+    return srcCv.__sky;
+  }
+  function fillSky(x, W, H, sky) {
+    x.fillStyle = `rgb(${sky.mean.map(Math.round).join(',')})`; x.fillRect(0, 0, W, H);
+    const sd = Math.max(...sky.std); if (sd < 0.6) return;
+    // Rauschkachel in der Körnung des Originals
+    const T = 256, t = document.createElement('canvas'); t.width = t.height = T;
+    const tx = t.getContext('2d'), id = tx.createImageData(T, T), rnd = U.rng(7);
+    for (let i = 0; i < id.data.length; i += 4) { const g = (rnd() + rnd() + rnd() - 1.5) * 2; for (let c = 0; c < 3; c++) id.data[i + c] = Math.max(0, Math.min(255, sky.mean[c] + g * sky.std[c])); id.data[i + 3] = 255; }
+    tx.putImageData(id, 0, 0);
+    x.fillStyle = x.createPattern(t, 'repeat'); x.fillRect(0, 0, W, H);
+  }
+  /** Bild mit weich auslaufenden Rändern (für den Übergang zum erweiterten Himmel). */
+  function feathered(srcCv, f) {
+    if (srcCv.__feather && srcCv.__feather.f === f) return srcCv.__feather.cv;
+    const c = document.createElement('canvas'); c.width = srcCv.width; c.height = srcCv.height;
+    const x = c.getContext('2d'); x.drawImage(srcCv, 0, 0);
+    x.globalCompositeOperation = 'destination-out';
+    const edge = (x0, y0, x1, y1, rx, ry, rw, rh) => { const g = x.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(rx, ry, rw, rh); };
+    const w = c.width, h = c.height;
+    edge(0, 0, f, 0, 0, 0, f, h); edge(w, 0, w - f, 0, w - f, 0, f, h); edge(0, 0, 0, f, 0, 0, w, f); edge(0, h, 0, h - f, 0, h - f, w, f);
+    srcCv.__feather = { f, cv: c };
+    return c;
+  }
+
+  /**
+   * Entfernungsskala (nur ganze Sonne): Höhenringe 50/100/150 Tsd. km, Kranz mit Strichen alle 5°/30°,
+   * Höhenlineale Ost und West; optional durchgehende Skala über die Scheibe (Abstand von der Mitte).
+   * Maßstab: gemessener Sonnenradius in Pixeln ≙ 696.000 km.
+   */
+  function drawDistanceScale(x, g, fs, through) {
+    const { cx, cy, r } = g, RS = 696000, h = (km) => (r * km) / RS;
+    const accent = st.mode === 'ca' ? [215, 190, 255] : [255, 205, 120], tick = [225, 219, 208];
+    const ink = st.mode === 'ca' ? [40, 12, 85] : [70, 28, 4], halo = st.mode === 'ca' ? [240, 230, 255] : [255, 236, 205];
+    const rgba = (c, a) => `rgba(${c.join(',')},${a})`;
+    const top = 150000, Rt = r + h(top), R0 = Rt + Math.max(8, r * 0.03), lw = Math.max(1, r / 260);
+    x.save();
+    // Höhenringe (gestrichelt)
+    x.setLineDash([r * 0.025, r * 0.035]); x.lineWidth = lw; x.strokeStyle = rgba(accent, 0.38);
+    for (const km of [50000, 100000, 150000]) { x.beginPath(); x.arc(cx, cy, r + h(km), 0, 7); x.stroke(); }
+    x.setLineDash([]);
+    // Kranz: Striche alle 5°, lange alle 30° (Positionswinkel von Nord über Ost)
+    x.strokeStyle = rgba(tick, 0.45); x.beginPath(); x.arc(cx, cy, R0, 0, 7); x.stroke();
+    for (let pa = 0; pa < 360; pa += 5) {
+      const a = (-90 - pa) * D2R, L = pa % 30 === 0 ? r * 0.028 : r * 0.012;
+      x.strokeStyle = rgba(tick, pa % 30 === 0 ? 0.8 : 0.5); x.lineWidth = pa % 30 === 0 ? lw * 2 : lw;
+      x.beginPath(); x.moveTo(cx + R0 * Math.cos(a), cy + R0 * Math.sin(a)); x.lineTo(cx + (R0 + L) * Math.cos(a), cy + (R0 + L) * Math.sin(a)); x.stroke();
+    }
+    // Höhenlineale Ost und West
+    x.font = `500 ${Math.round(fs * 0.75)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'top';
+    for (const side of [-1, 1]) {
+      x.strokeStyle = rgba(accent, 0.92); x.lineWidth = lw * 2;
+      x.beginPath(); x.moveTo(cx + side * r, cy); x.lineTo(cx + side * Rt, cy); x.stroke();
+      for (let km = 0; km <= top; km += 10000) {
+        const X = cx + side * (r + h(km)), L = km % 50000 === 0 ? r * 0.02 : r * 0.01;
+        x.lineWidth = km % 50000 === 0 ? lw * 2 : lw; x.beginPath(); x.moveTo(X, cy - L); x.lineTo(X, cy + L); x.stroke();
+        if (km && km % 50000 === 0) { x.fillStyle = rgba(accent, 0.96); x.fillText(String(km / 1000), X, cy + L + fs * 0.25); }
+      }
+    }
+    if (through) {
+      // durchgehend über die Scheibe: dunkel mit hellem Saum, Abstand von der Sonnenmitte
+      const line = (x0, y0, x1, y1, w) => { x.lineWidth = w + lw * 2; x.strokeStyle = rgba(halo, 0.6); x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke(); x.lineWidth = w; x.strokeStyle = rgba(ink, 0.92); x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke(); };
+      line(cx - r, cy, cx + r, cy, lw * 1.5);
+      x.textBaseline = 'bottom';
+      for (let km = -650000; km <= 650000; km += 50000) {
+        const X = cx + h(km), major = km % 200000 === 0, L = major ? r * 0.02 : r * 0.01;
+        line(X, cy - L, X, cy + L, major ? lw * 1.6 : lw);
+        if (major) { x.lineWidth = Math.max(2, fs * 0.18); x.strokeStyle = rgba(halo, 0.8); x.strokeText(String(Math.abs(km / 1000)), X, cy - L - fs * 0.15); x.fillStyle = rgba(ink, 1); x.fillText(String(Math.abs(km / 1000)), X, cy - L - fs * 0.15); }
+      }
+    }
+    // Himmelsrichtungen außerhalb des Kranzes
+    x.font = `700 ${Math.round(fs * 1.1)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; x.textBaseline = 'middle'; x.fillStyle = '#f2eee6';
+    const d = R0 + r * 0.075;
+    x.fillText('N', cx, cy - d); x.fillText('S', cx, cy + d); x.fillText('O', cx - d, cy); x.fillText('W', cx + d, cy);
+    x.font = `400 ${Math.round(fs * 0.7)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; x.textAlign = 'left'; x.textBaseline = 'alphabetic'; x.fillStyle = 'rgba(200,195,186,.85)';
+    x.fillText(`Höhe über dem Sonnenrand in 1.000 km${through ? ' · innen: Abstand von der Sonnenmitte in 1.000 km' : ''} · Kranz alle 5°/30°`, fs * 0.8, g.H - fs * 2.2);
+    x.restore();
+  }
+
+  /** Flares des Aufnahmetags (±12 h) an ihren Regionen markieren. */
+  function drawDayFlares(x, g, fs, mono) {
+    const list = (st.dayFlares || []).filter((f) => Math.abs(f.max - st.time) < 12 * 3600000 && /^[CMX]/.test(f.cls));
+    for (const f of list) {
+      const grp = st.groups && st.groups.find((q) => q.region.region === f.region); if (!grp) continue;
+      const px = g.cx + grp.x * g.r, py = g.cy - grp.y * g.r, rr = fs * (f.cls[0] === 'X' ? 1.3 : f.cls[0] === 'M' ? 1 : 0.7);
+      x.save(); x.translate(px - fs * 1.6, py - fs * 1.2); x.strokeStyle = f.cls[0] === 'X' ? '#ff4d4d' : f.cls[0] === 'M' ? '#ff9a3c' : '#ffe08a'; x.lineWidth = Math.max(1.5, fs * 0.12);
+      x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, r1 = k % 2 ? rr * 0.45 : rr; x.moveTo(0, 0); x.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); } x.stroke();
+      x.font = `700 ${Math.round(fs * 0.75)}px ${mono}`; x.fillStyle = x.strokeStyle; x.textAlign = 'right'; x.textBaseline = 'middle'; x.fillText(f.cls, -rr - fs * 0.2, 0);
+      x.restore();
+    }
   }
 
   function drawCompass(x, fs, mono) {
@@ -702,6 +821,26 @@
     return { loc: h ? A.formatLocation(h.lat, h.cmd) : 'außerhalb der Scheibe', w: (st.src.width * arcPerPx) / 60, h: (st.src.height * arcPerPx) / 60, scale: arcPerPx };
   }
 
+  /** Variante „Zusammenfassung“: die aktivsten Regionen im Bild kurz erklärt. */
+  function summaryLines() {
+    const head = legendLines().filter(([k]) => k === 'h' || k === 't').slice(0, 2);
+    const lines = [...head, ['m', `${st.cfg.location.name} · P ${st.eph.P.toFixed(1)}° · B₀ ${st.eph.B0.toFixed(2)}°`], ['g', '']];
+    const cand = (st.groups || []).filter((g) => g.region.type === 'spots' && (st.type === 'full' || g.spots.length || inField(g)))
+      .sort((a, b) => ((/D/.test(b.region.magClass) ? 1000 : 0) + (b.region.area || 0)) - ((/D/.test(a.region.magClass) ? 1000 : 0) + (a.region.area || 0))).slice(0, 4);
+    if (!cand.length) lines.push(['m', 'Keine nummerierten Fleckengruppen im Bild.']);
+    else lines.push(['s', 'Die aktivsten Regionen']);
+    for (const g of cand) {
+      const r = g.region, story = M.regionStory(r, [], (st.dayFlares || []).filter((f) => f.region === r.region), st.mode);
+      const earths = r.area ? (r.area / 41.9 >= 1 ? `etwa ${Math.round(r.area / 41.9)} Erdscheiben` : `etwa ${(r.area / 41.9).toFixed(1).replace('.', ',')} Erdscheiben`) : '';
+      lines.push(['a', `AR ${r.region} · ${r.spotClass} ${M.magSymbol(r.magClass)}`]);
+      lines.push(['p', story.fazit]);
+      lines.push(['m', [earths, r.location, r.numberSpots ? `${r.numberSpots} Flecken` : ''].filter(Boolean).join(' · ')]);
+      lines.push(['g', '']);
+    }
+    lines.push(['d', 'Daten: NOAA SWPC (SRS), NASA SDO via Helioviewer']);
+    return lines;
+  }
+
   function legendLines() {
     const al = st.align, e = st.eph, loc = st.cfg.location;
     const how = { auto: 'automatisch (SDO-Abgleich)', field: 'fortgeschrieben (Bildfeldrotation)', manual: 'manuell', none: 'nicht ausgerichtet' }[al.method];
@@ -735,13 +874,13 @@
     return lines;
   }
 
-  function drawLegend(x, S, H, L, fs, mono, accent) {
+  function drawLegend(x, S, H, L, fs, mono, accent, textMode = 'list') {
     x.fillStyle = '#0b0b0c'; x.fillRect(S, 0, L, H);
     x.fillStyle = '#1e1e22'; x.fillRect(S, 0, Math.max(1, fs * 0.08), H);
     const pad = fs * 1.4, maxW = L - pad * 2; let y = pad * 1.4;
     x.textAlign = 'left'; x.textBaseline = 'alphabetic';
     const wrap = (txt, font) => { x.font = font; const out = []; let cur = ''; for (const w of txt.split(' ')) { const t = cur ? cur + ' ' + w : w; if (x.measureText(t).width > maxW && cur) { out.push(cur); cur = '  ' + w; } else cur = t; } out.push(cur); return out; };
-    for (const [kind, text] of legendLines()) {
+    for (const [kind, text] of (textMode === 'summary' ? summaryLines() : legendLines())) {
       if (y > H - pad) break;
       let font, color, lh;
       if (kind === 'h') { font = `700 ${Math.round(fs * 1.35)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; color = '#ece8e1'; lh = fs * 1.9; }
@@ -749,6 +888,7 @@
       else if (kind === 'a') { font = `600 ${Math.round(fs * 0.95)}px ${mono}`; color = accent; lh = fs * 1.35; }
       else if (kind === 't') { font = `500 ${Math.round(fs * 1.0)}px ${mono}`; color = accent; lh = fs * 1.4; }
       else if (kind === 'd') { font = `400 ${Math.round(fs * 0.78)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; color = '#8e8a83'; lh = fs * 1.15; }
+      else if (kind === 'p') { font = `400 ${Math.round(fs * 0.9)}px -apple-system, "Helvetica Neue", Arial, sans-serif`; color = '#ece8e1'; lh = fs * 1.3; }
       else if (kind === 'g') { y += fs * 0.6; continue; }
       else { font = `400 ${Math.round(fs * 0.82)}px ${mono}`; color = '#b9b5ad'; lh = fs * 1.2; }
       x.fillStyle = color;
@@ -823,23 +963,53 @@
     return L.join('\n');
   }
 
-  /* ---------------- Speichern ---------------- */
-  $('#folderBtn').addEventListener('click', async () => { const f = await api.rec.chooseFolder(); if (f) { $('#folder').textContent = f; st.cfg.recordings.folder = f; } });
-  $('#saveBtn').addEventListener('click', async () => {
+  /* ---------------- Exportieren ---------------- */
+  function exportName() { return baseName() + (st.exp.format === 'tiff' ? '.tif' : '.jpg'); }
+  function updateExportPreview() {
+    const e = st.exp, pv = st.preview, k = st.work ? st.work.k : 1;
+    const w = pv ? Math.round(pv.width / k) : 0, h = pv ? Math.round(pv.height / k) : 0;
+    const mb = e.format === 'tiff' ? (w * h * 4) / 1048576 : (w * h * (e.quality >= 100 ? 0.9 : e.quality >= 95 ? 0.45 : 0.3)) / 1048576;
+    $('#exPrev').textContent = `${exportName()}${e.txt ? ' + .txt' : ''} · ${w.toLocaleString('de-DE')} × ${h.toLocaleString('de-DE')} px · ≈ ${mb.toFixed(1).replace('.', ',')} MB\nOrdner: ${st.cfg.recordings.folder || 'wird beim Exportieren gewählt'}`;
+    $('#exQGrp').style.opacity = e.format === 'tiff' ? 0.4 : 1;
+  }
+  function openExport() {
+    const e = st.exp;
+    setSeg('exText', e.text); setSeg('exScale', e.scale); setSeg('exFormat', e.format); setSeg('exQ', e.quality);
+    $('#exLabels').checked = e.labels !== false; $('#exGrid').checked = !!e.grid; $('#exFlares').checked = !!e.flares; $('#exTxt').checked = e.txt !== false;
+    $('#exScale').style.opacity = st.type === 'full' ? 1 : 0.4;
+    updateExportPreview();
+    $('#exportDlg').hidden = false;
+  }
+  const exSeg = (id, key, num) => $(id).addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (!b) return; setExp({ [key]: num ? +b.dataset.v : b.dataset.v }); setSeg(id.slice(1), num ? +b.dataset.v : b.dataset.v); updateExportPreview(); });
+  exSeg('#exText', 'text'); exSeg('#exScale', 'scale'); exSeg('#exFormat', 'format'); exSeg('#exQ', 'quality', true);
+  [['#exLabels', 'labels'], ['#exGrid', 'grid'], ['#exFlares', 'flares'], ['#exTxt', 'txt']].forEach(([id, key]) => $(id).addEventListener('change', () => { setExp({ [key]: $(id).checked }); updateExportPreview(); }));
+  $('#exCancel').addEventListener('click', () => ($('#exportDlg').hidden = true));
+  $('#exFolderBtn').addEventListener('click', async () => { const f = await api.rec.chooseFolder(); if (f) { st.cfg.recordings.folder = f; updateExportPreview(); } });
+  $('#saveBtn').addEventListener('click', openExport);
+  $('#exportForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
     let folder = st.cfg.recordings.folder;
-    if (!folder) { folder = await api.rec.chooseFolder(); if (!folder) return; $('#folder').textContent = folder; st.cfg.recordings.folder = folder; }
-    $('#saveBtn').disabled = true; $('#saveInfo').textContent = 'Erzeuge JPEG in voller Auflösung …';
+    if (!folder) { folder = await api.rec.chooseFolder(); if (!folder) return; st.cfg.recordings.folder = folder; }
+    const e = st.exp;
+    $('#exGo').disabled = true; $('#exGo').textContent = 'Erzeuge …';
     try {
       await sleep(30);
-      const cv = renderOutput(st.src, st.disc, { legend: $('#legendChk').checked, grid: $('#gridChk').checked });
-      const q = (st.cfg.recordings.jpegQuality || 95) / 100;
-      const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', q));
-      const res = await api.rec.save({ folder, baseName: baseName(), jpeg: await blob.arrayBuffer(), txt: st.txt });
+      const cv = renderOutput(st.src, st.disc, e, 1);
+      let payload;
+      if (e.format === 'tiff') {
+        const id = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+        payload = { tiff: { rgba: id.data, w: cv.width, h: cv.height } };
+      } else {
+        const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', (e.quality || 95) / 100));
+        payload = { jpeg: await blob.arrayBuffer() };
+      }
+      const res = await api.rec.save({ folder, baseName: baseName(), ...payload, txt: e.txt ? st.txt : null });
       $('#saved').innerHTML = `Gespeichert: <a id="reveal">${esc(res.jpgPath.split('/').pop())}</a>${res.txtPath ? ' + ' + esc(res.txtPath.split('/').pop()) : ''} · ${cv.width}×${cv.height} px`;
       $('#reveal').onclick = () => api.rec.reveal(res.jpgPath);
-      toast('Bild und Textdatei gespeichert.');
-    } catch (e) { toast('Speichern fehlgeschlagen: ' + e.message); }
-    $('#saveBtn').disabled = false; $('#saveInfo').textContent = 'JPEG + Textdatei';
+      $('#exportDlg').hidden = true;
+      toast(e.format === 'tiff' ? 'TIFF gespeichert.' : 'JPEG gespeichert.');
+    } catch (err) { toast('Exportieren fehlgeschlagen: ' + err.message); }
+    $('#exGo').disabled = false; $('#exGo').textContent = 'Exportieren';
   });
 
   let tt; function toast(m) { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => (t.hidden = true), 3500); }
