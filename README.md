@@ -10,6 +10,8 @@ beschriftet und mit Legende und Textdatei gespeichert.
 **Reiter Sonne (Widget)**
 - Aktuelles Sonnenbild, umschaltbar zwischen **Weißlicht** (SDO/HMI, Hauptansicht), **Kalzium** (SDO/AIA 1700 Å)
   und **H-Alpha** (NSO/GONG)
+- H-Alpha in Schwarz-Weiß, mit verstärkten Protuberanzen am Rand: Der Bereich außerhalb der Scheibe wird je
+  nach Abstand vom Himmel befreit und bis etwa ×8 aufgehellt.
 - **Flares** der letzten 24 h als Markierung im Bild (antippen für Details), Flares je Region im Erklärungsfenster
 - Fleckengruppen mit NOAA-Nummer, McIntosh- und Mt.-Wilson-Klasse; Klick öffnet die Erklärung mit
   Flare-Potenzial und Flächenverlauf

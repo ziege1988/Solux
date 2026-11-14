@@ -87,15 +87,37 @@
     const NB = 48, bins = Array.from({ length: NB }, () => []);
     if (kind !== 'wl') for (let j = 0; j < lum.length; j += 3) { const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c, py - c) / R; if (rr < 0.995) bins[Math.min(NB - 1, (rr * NB) | 0)].push(lum[j]); }
     const ringMed = bins.map((b) => { if (!b.length) return med; b.sort((a, c2) => a - c2); return b[b.length >> 1]; });
+    // H-Alpha: Himmel außerhalb des Rands je Ring (Streulicht), damit Protuberanzen verstärkt werden können
+    const SB = 60, sky = new Float32Array(SB);
+    if (kind === 'ha') {
+      const sb = Array.from({ length: SB }, () => []);
+      for (let j = 0; j < lum.length; j += 2) { const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c, py - c) / R; if (rr > 1 && rr < 1.6) sb[Math.min(SB - 1, (((rr - 1) / 0.6) * SB) | 0)].push(lum[j]); }
+      sb.forEach((b, k) => { b.sort((p, q) => p - q); sky[k] = b.length ? b[b.length >> 1] : 0; });
+    }
     // H-Alpha-Farben nach einer eigenen Aufnahme des Nutzers ausgemessen (kräftiges Orange-Braun)
     const pal = kind === 'ha'
       ? [[0, [18, 3, 0]], [0.16, [139, 36, 1]], [0.36, [180, 73, 10]], [0.52, [195, 92, 22]], [0.68, [210, 111, 37]], [0.82, [226, 140, 61]], [0.93, [241, 176, 101]], [1, [255, 222, 160]]]
       : [[0, [0, 0, 0]], [0.25, [72, 30, 140]], [0.5, [150, 95, 235]], [0.75, [222, 196, 255]], [1, [255, 252, 255]]];
     for (let j = 0, i = 0; j < lum.length; j++, i += 4) {
       const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c + 0.5, py - c + 0.5) / R;
+      if (kind === 'ha' && rr > 1) {
+        // Protuberanzen: Überschuss über dem Himmel verstärken (bis ×8, ab dem Rand weich eingeblendet), leicht aufgehellt
+        // Überschuss über Himmel und Streulicht, abzüglich einer Rauschschwelle (≈ 4 % der Scheibenhelligkeit)
+        const ex = Math.max(0, (lum[j] - sky[Math.min(SB - 1, (((rr - 1) / 0.6) * SB) | 0)]) / med - 0.04);
+        const t = Math.min(1, (rr - 1) / 0.008), gain = 2 + 6 * t * t * (3 - 2 * t);
+        const v = Math.pow(Math.min(1, ex * gain), 0.8) * 245;
+        d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255; continue;
+      }
       if (rr > 1.004) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255; continue; }
       const edge = rr > 1 ? 1 - (rr - 1) / 0.004 : 1;
-      if (kind === 'ca' || kind === 'ha') {
+      if (kind === 'ha') {
+        // H-Alpha schwarz-weiß: Filamente dunkel, Plages hell, Randverdunkelung ausgeglichen
+        // Ring-Median zwischen den Stützstellen interpolieren (sonst entstehen sichtbare Ringe)
+        const fb = Math.min(NB - 1.001, Math.max(0, Math.min(rr, 0.999) * NB - 0.5)), k0 = fb | 0, rm = ringMed[k0] + (ringMed[Math.min(NB - 1, k0 + 1)] - ringMed[k0]) * (fb - k0);
+        const q = lum[j] / rm;
+        const v = Math.max(0.03, Math.min(1, 0.55 + (q - 1) * 1.7)) * 235;
+        d[i] = v; d[i + 1] = v; d[i + 2] = v;
+      } else if (kind === 'ca') {
         // Kalzium: Grundhelligkeit, damit sich die Scheibe vom Schwarz abhebt · H-Alpha: Kontrast für Filamente und Plages anheben
         const q = lum[j] / ringMed[Math.min(NB - 1, (Math.min(rr, 0.999) * NB) | 0)], v = Math.max(0, Math.min(1, kind === 'ha' ? 0.52 + (q - 1) * 2.2 : 0.08 + q * 0.46)) * edge;
         let k = 0; while (k < pal.length - 2 && v > pal[k + 1][0]) k++;
@@ -110,7 +132,7 @@
       d[i + 3] = 255;
     }
     x.putImageData(id, 0, 0);
-    if (kind !== 'wl') drawRim(x, c, R, kind);
+    if (kind === 'ca') drawRim(x, c, R, kind);
     return cv;
   }
 
@@ -123,19 +145,27 @@
     const x = cv.getContext('2d'), c = size / 2, R = radiusPx * (size / 1024);
     x.drawImage(img, 0, 0, size, size);
     x.globalCompositeOperation = 'saturation'; x.fillStyle = '#808080'; x.fillRect(0, 0, size, size);
+    // H-Alpha: Ring außerhalb des Rands getrennt verstärken – dort liegen die Protuberanzen.
+    // „Farbig nachbelichten“ mit Hellgrau zieht eine Schwelle von ≈ 3 % ab (Streulicht, Rauschen), danach ×8.
+    let off = null;
+    if (kind === 'ha') {
+      off = document.createElement('canvas'); off.width = off.height = size;
+      const o = off.getContext('2d'); o.drawImage(cv, 0, 0);
+      o.globalCompositeOperation = 'color-burn'; o.fillStyle = '#f7f7f7'; o.fillRect(0, 0, size, size);
+      selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter');
+      o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(c, c, R * 1.006, 0, 7); o.fill();
+    }
     if (kind === 'ca') {
       // Kontrast anheben (v² · 4): Netzwerk und Plages treten hervor, Hintergrund bleibt dunkel
       liftLimb(x, c, R, size, 0.25);
-      x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
-      x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0); x.drawImage(cv, 0, 0);
+      selfDraw(x, cv, 'multiply');
+      { const t = document.createElement('canvas'); t.width = t.height = size; t.getContext('2d').drawImage(cv, 0, 0); x.globalCompositeOperation = 'lighter'; x.drawImage(t, 0, 0); x.drawImage(t, 0, 0); }
       x.globalCompositeOperation = 'multiply'; x.fillStyle = '#cfa8ff'; x.fillRect(0, 0, size, size);
       x.globalCompositeOperation = 'screen'; x.fillStyle = 'rgba(62,26,125,.55)'; x.fillRect(0, 0, size, size); // Grundhelligkeit der Scheibe
     }
     else if (kind === 'ha') {
-      liftLimb(x, c, R, size, 0.32);
-      x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
-      x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0);
-      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#ff7d1c'; x.fillRect(0, 0, size, size);
+      liftLimb(x, c, R, size, 0.3);
+      selfDraw(x, cv, 'multiply'); x.globalAlpha = 0.5; selfDraw(x, cv, 'lighter'); x.globalAlpha = 1; // Kontrast: v² · 1,5
     }
     else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
     if (kind === 'wl') {
@@ -143,11 +173,20 @@
       for (let i = 0; i <= 12; i++) { const r = i / 12, mu = Math.sqrt(Math.max(0, 1 - r * r)), ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2, v = Math.round(255 * ld); g.addColorStop(r, `rgb(${v},${v},${v})`); }
       x.globalCompositeOperation = 'multiply'; x.fillStyle = g; x.fillRect(0, 0, size, size);
     }
+    if (kind === 'ha') x.fillStyle = '#000'; // deckende Füllung, sonst schneidet der Zuschnitt die Scheibe mit aus
     x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, 7); x.fill();
     x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
+    if (off) { x.globalCompositeOperation = 'lighter'; x.drawImage(off, 0, 0); }
     x.globalCompositeOperation = 'source-over';
-    if (kind !== 'wl') drawRim(x, c, R, kind);
+    if (kind === 'ca') drawRim(x, c, R, kind);
     return cv;
+  }
+
+  /** Leinwand mit einer Mischart auf sich selbst zeichnen – über eine Kopie (Selbst-Zeichnen ist nicht überall zuverlässig). */
+  function selfDraw(x, cv, op) {
+    const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
+    t.getContext('2d').drawImage(cv, 0, 0);
+    x.globalCompositeOperation = op; x.drawImage(t, 0, 0);
   }
 
   /** Randverdunkelung ohne Pixelzugriff grob ausgleichen: Rand per „Screen“ aufhellen. */
