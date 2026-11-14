@@ -195,6 +195,19 @@
     return { level, title: `${kinds[kindEn] || kindEn}: ${title}`, detail: text };
   }
 
-  const api = { SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
+  /** Ist eine Meldung „brisant“ genug für eine Push-Mitteilung? */
+  function pushWorthy(item) {
+    if (item.kind === 'aurora') return true;
+    if (item.kind === 'flare') return /^X/.test(item.title) || /^M([5-9]|\d{2})/.test(item.title);
+    if (item.kind === 'alert') return item.level === 'bad';
+    return false;
+  }
+  /** Schlüssel zum Erkennen bereits gemeldeter Ereignisse. */
+  function pushKey(item) {
+    const t = new Date(item.time).toISOString();
+    return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
+  }
+
+  const api = { pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);

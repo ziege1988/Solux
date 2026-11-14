@@ -8,7 +8,7 @@
 (() => {
   'use strict';
   const SW = window.SoluxSW, S = window.SoluxSeeing;
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -129,6 +129,33 @@
     openExternal: async (url) => window.open(url, '_blank', 'noopener'),
     rec: { profileReset: async () => ({}) },
     update: { check: async () => ({ available: false, message: 'Die Handy-Version aktualisiert sich automatisch.' }), install: async () => false },
+    push: {
+      async status() {
+        const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { message: standalone ? 'Dieses Gerät unterstützt keine Web-Push-Mitteilungen (iOS 16.4 oder neuer nötig).' : 'Auf dem iPhone funktionieren Mitteilungen nur, wenn Solux über „Zum Home-Bildschirm“ installiert und von dort geöffnet wurde.', canSubscribe: false };
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) return { message: 'Mitteilungen gibt es nur in der installierten App (Safari → Teilen → Zum Home-Bildschirm).', canSubscribe: false };
+        const sub = await reg.pushManager.getSubscription();
+        const perm = Notification.permission;
+        if (sub) return { message: '<b class="lv-ok">Aktiv</b> auf diesem Gerät. Falls noch nicht geschehen: Code unten als GitHub-Secret hinterlegen.', canSubscribe: false, subscription: JSON.stringify(sub) };
+        if (perm === 'denied') return { message: 'Mitteilungen sind blockiert. In den iOS-Einstellungen → Mitteilungen → Solux erlauben.', canSubscribe: false };
+        return { message: 'Noch nicht aktiviert.', canSubscribe: true };
+      },
+      async subscribe() {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') throw new Error('Mitteilungen wurden nicht erlaubt.');
+        const reg = await navigator.serviceWorker.ready;
+        const key = window.SOLUX_PUSH.publicKey.replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(key + '='.repeat((4 - (key.length % 4)) % 4));
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+        return JSON.stringify(sub);
+      },
+      async test() {
+        if (Notification.permission !== 'granted') throw new Error('Zuerst Mitteilungen aktivieren.');
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification('Solux · Test', { body: 'So sieht eine Mitteilung von Solux aus.', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'solux-test' });
+      },
+    },
     on: (ch, fn) => { (listeners[ch] ||= []).push(fn); return () => { listeners[ch] = listeners[ch].filter((f) => f !== fn); }; },
   };
 

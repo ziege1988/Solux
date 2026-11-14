@@ -151,7 +151,8 @@ function checkNotifications() {
   for (const n of news.items) {
     const key = `${n.kind}|${n.title}|${new Date(n.time).toISOString().slice(0, 13)}`;
     if (seen.has(key)) continue;
-    const want = (n.kind === 'flare' && n.level !== 'ok' && cfg.notify.flareM) || (n.kind === 'aurora' && cfg.notify.aurora) || (n.kind === 'region' && cfg.notify.newRegion);
+    const want = (n.kind === 'flare' && n.level !== 'ok' && cfg.notify.flareM) || (n.kind === 'aurora' && cfg.notify.aurora) || (n.kind === 'region' && cfg.notify.newRegion)
+      || (n.kind === 'alert' && n.level === 'bad' && cfg.notify.alerts !== false);
     if (want && Date.now() - n.time < 6 * 3600000) fresh.push(n);
     seen.add(key);
   }

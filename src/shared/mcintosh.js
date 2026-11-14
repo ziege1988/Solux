@@ -78,6 +78,96 @@
     return [bits.join('; '), mag.join('; ')].filter(Boolean).join('. ');
   }
 
-  const api = { Z, P, C, MW, magSymbol, decode, riskOf, describe };
+  /* ---------- Verständliche Erklärungen ---------- */
+  const Z_PLAIN = {
+    A: 'ein einzelner kleiner Fleck ohne Hof oder eine Ansammlung winziger Poren',
+    B: 'eine kleine Gruppe aus zwei Teilen (Plus- und Minuspol), noch ganz ohne Hof',
+    C: 'eine zweiteilige Gruppe, bei der nur ein Ende schon einen grauen Hof (Penumbra) hat',
+    D: 'eine zweiteilige Gruppe mit Hof an beiden Enden, aber noch recht kurz',
+    E: 'eine große, zweiteilige Gruppe mit Hof an beiden Enden',
+    F: 'eine sehr große, lang gestreckte Gruppe mit Hof an beiden Enden',
+    H: 'ein einzelner großer Fleck mit Hof – meist der Rest einer älteren Gruppe',
+  };
+  const Z_SIZE = { A: '', B: '', C: '', D: 'kürzer als etwa 10° (≈ 120.000 km)', E: '10° bis 15° lang (120.000–180.000 km)', F: 'länger als 15° (über 180.000 km)', H: '' };
+  const P_PLAIN = {
+    x: 'der größte Fleck hat keinen Hof',
+    r: 'der Hof um den größten Fleck ist erst ansatzweise vorhanden',
+    s: 'der größte Fleck hat einen kleinen, runden, gleichmäßigen Hof',
+    a: 'der größte Fleck hat einen kleinen, unregelmäßig geformten Hof',
+    h: 'der größte Fleck hat einen großen, runden Hof',
+    k: 'der größte Fleck hat einen großen, unregelmäßigen Hof – oft mehrere Kerne darin',
+  };
+  const C_PLAIN = {
+    x: 'es ist nur ein Fleck',
+    o: 'zwischen den beiden Hauptflecken ist kaum etwas',
+    i: 'zwischen den Hauptflecken liegen einige kleinere Flecken',
+    c: 'die Gruppe ist dicht gepackt, mit vielen Flecken (teils mit Hof) zwischen den Hauptflecken',
+  };
+  const MW_PLAIN = {
+    A: 'Das Magnetfeld hat nur eine Polarität – ruhig.',
+    B: 'Plus- und Minuspol liegen sauber getrennt nebeneinander – der Normalfall.',
+    G: 'Plus und Minus sind unordentlich durchmischt – das Magnetfeld ist verwickelt.',
+    D: 'Gegensätzliche Pole liegen dicht beieinander im selben Hof – hier baut sich besonders viel Energie auf.',
+  };
+
+  /** Ein Satz in Alltagssprache für eine Gruppe. */
+  function plainSummary(spotClass, magClass) {
+    if (!spotClass || spotClass.length !== 3) return 'Ein aktives Gebiet ohne sichtbare Flecken: im Weißlicht unauffällig, im Kalziumlicht als helle Fläche (Plage) zu sehen.';
+    const [z, p, c] = spotClass;
+    let t = `Das ist ${Z_PLAIN[z] || 'eine Fleckengruppe'}${Z_SIZE[z] ? ', ' + Z_SIZE[z] : ''}. `;
+    if (z !== 'A' && z !== 'B') t += `${(P_PLAIN[p] || '').replace(/^./, (m) => m.toUpperCase())}${C_PLAIN[c] ? ', ' + C_PLAIN[c] : ''}.`;
+    else if (C_PLAIN[c]) t += `${C_PLAIN[c].replace(/^./, (m) => m.toUpperCase())}.`;
+    const mag = String(magClass || '').toUpperCase();
+    const last = mag.includes('D') ? 'D' : mag.includes('G') ? 'G' : mag[0];
+    if (MW_PLAIN[last]) t += ' ' + MW_PLAIN[last];
+    return t.trim();
+  }
+
+  /** Fläche in Millionstel Hemisphäre -> Vergleich mit der Erde (Erdscheibe ≈ 42 MH). */
+  function areaPlain(msh) {
+    if (!msh) return null;
+    const earths = msh / 41.9, km2 = msh * 3.044e6;
+    const e = earths < 0.95 ? `etwa ${Math.max(0.1, earths).toFixed(1).replace('.', ',')} Erdscheiben` : `etwa ${Math.round(earths)} Erdscheibe${Math.round(earths) === 1 ? '' : 'n'}`;
+    return `${msh} MH ≈ ${(km2 / 1e6).toFixed(0)} Mio. km² – ${e}${msh >= 500 ? ', mit bloßem Auge (mit Filter!) sichtbar' : ''}`;
+  }
+
+  /** "S08W83" -> verständliche Lagebeschreibung inkl. Zeit bis zum Rand. */
+  function positionPlain(loc) {
+    const m = /^([NS])(\d+)([EW])(\d+)$/.exec(loc || '');
+    if (!m) return null;
+    const lat = +m[2], lon = +m[4], ns = m[1] === 'N' ? 'nördlich' : 'südlich', ew = m[3] === 'E' ? 'östlich (links)' : 'westlich (rechts)';
+    let t = `${lat}° ${ns} des Sonnenäquators und ${lon}° ${ew} der Scheibenmitte.`;
+    const days = (deg) => Math.max(0, deg / 13.2);
+    if (m[3] === 'W') { const d = days(90 - lon); t += d < 1 ? ' Sie dreht in weniger als einem Tag über den Westrand aus dem Blick.' : ` Sie dreht in etwa ${Math.round(d)} Tagen über den Westrand aus dem Blick.`; }
+    else { const d = days(90 - lon); t += ` Sie ist vor etwa ${Math.max(0, Math.round(d))} Tagen am Ostrand aufgetaucht und bleibt noch rund ${Math.round(days(90 + lon))} Tage sichtbar.`; }
+    if (lon > 60) t += ' Nahe am Rand wirkt sie stark verkürzt.';
+    return t;
+  }
+
+  const GLOSSARY = [
+    { k: 'AR 4566', t: 'Active Region (aktive Region)', d: 'Fortlaufende Nummer der US-Wetterbehörde NOAA für jedes Fleckengebiet. Kehrt eine Gruppe nach einer Sonnenumdrehung (≈ 27 Tage) zurück, bekommt sie eine neue Nummer.' },
+    { k: 'Dsi, Ekc …', t: 'McIntosh-Klasse', d: 'Drei Buchstaben beschreiben das Aussehen einer Gruppe: 1. Buchstabe = Typ und Größe (A bis H), 2. = Hof des größten Flecks (x r s a h k), 3. = wie dicht die Flecken stehen (x o i c).' },
+    { k: 'A B C D E F H', t: 'Gruppentyp (1. Buchstabe)', d: 'A einzelner Fleck ohne Hof · B zweiteilig ohne Hof · C Hof an einem Ende · D Hof an beiden Enden, kurz · E groß · F sehr groß · H einzelner Fleck mit Hof.' },
+    { k: 'x r s a h k', t: 'Hof des größten Flecks (2. Buchstabe)', d: 'x kein Hof · r angedeutet · s klein und rund · a klein und unregelmäßig · h groß und rund · k groß und unregelmäßig.' },
+    { k: 'x o i c', t: 'Verteilung (3. Buchstabe)', d: 'x Einzelfleck · o offen, kaum Flecken dazwischen · i einige Flecken dazwischen · c kompakt, dicht gepackt.' },
+    { k: 'α β γ δ', t: 'Mount-Wilson-Klasse (Magnetfeld)', d: 'α eine Polarität · β Plus und Minus sauber getrennt · γ verwickelt · δ gegensätzliche Pole im selben Hof. Je weiter hinten im Alphabet, desto eher entstehen große Flares.' },
+    { k: 'Umbra / Penumbra', t: 'Kernschatten / Hof', d: 'Der dunkle Kern eines Flecks (Umbra) und der graue, faserige Hof darum (Penumbra).' },
+    { k: 'Plage', t: 'Helles Fackelgebiet', d: 'Gebiet mit starkem Magnetfeld, das im Kalziumlicht hell leuchtet – oft rund um Fleckengruppen, manchmal auch ohne Flecken.' },
+    { k: 'MH', t: 'Millionstel Hemisphäre', d: 'Flächenmaß für Flecken: Anteil an der sichtbaren Sonnenhälfte. Eine Erdscheibe entspricht etwa 42 MH.' },
+    { k: 'S08W83', t: 'Position auf der Sonne', d: 'Heliografische Breite (N/S vom Sonnenäquator) und Abstand zur Scheibenmitte (E = Osten/links, W = Westen/rechts) in Grad. Gruppen wandern täglich etwa 13° von Ost nach West.' },
+    { k: 'C1 M2.4 X1', t: 'Flare-Klassen', d: 'Helligkeit eines Strahlungsausbruchs im Röntgenlicht, jede Stufe 10× stärker: A, B, C (klein), M (mittel), X (stark). Die Zahl dahinter feiner abgestuft.' },
+    { k: 'R1 … R5', t: 'Funkausfall (Radio Blackout)', d: 'Folge von Flares auf der Tagseite der Erde: Kurzwellenfunk wird gestört. R1/R2 durch M-Flares, ab R3 durch X-Flares.' },
+    { k: 'CME', t: 'Koronaler Massenauswurf', d: 'Eine ausgeschleuderte Wolke aus Sonnenplasma. Trifft sie nach 1–4 Tagen die Erde, kann sie Polarlichter auslösen.' },
+    { k: 'Kp', t: 'Kp-Index', d: 'Maß für die Unruhe des Erdmagnetfelds von 0 (ruhig) bis 9 (extremer Sturm). In Mitteldeutschland sind Polarlichter meist ab Kp 6 bis 7 möglich.' },
+    { k: 'G1 … G5', t: 'Geomagnetischer Sturm', d: 'Sturmstufen der NOAA: G1 = Kp 5 bis G5 = Kp 9.' },
+    { k: 'S1 … S5', t: 'Strahlungssturm', d: 'Viele energiereiche Protonen von der Sonne – relevant für Satelliten und Raumfahrt, nicht für Beobachter am Boden.' },
+    { k: 'SN', t: 'Sonnenfleckenrelativzahl', d: 'Zahl = 10 × Gruppen + Einzelflecken; das klassische Maß für die Sonnenaktivität.' },
+    { k: 'F10.7', t: 'Radiofluss bei 10,7 cm', d: 'Radiostrahlung der Sonne als Aktivitätsmaß: ruhig um 70, sehr aktiv über 200.' },
+    { k: 'P, B₀, L₀', t: 'Lage der Sonnenachse', d: 'P = Neigung der Sonnenachse gegen Himmelsnord · B₀ = welcher Breitengrad in der Mitte liegt · L₀ = Carrington-Länge der Scheibenmitte.' },
+    { k: 'CR', t: 'Carrington-Rotation', d: 'Fortlaufend gezählte Sonnenumdrehungen seit 1853, je rund 27,3 Tage.' },
+    { k: 'Seeing', t: 'Luftunruhe', d: 'Wie stark die Luft das Bild flimmern lässt, in Bogensekunden. Unter 2″ gut, über 3,5″ schlecht. Tagsüber vor allem durch aufgeheizten Boden.' },
+  ];
+
+  const api = { Z, P, C, MW, magSymbol, decode, riskOf, describe, plainSummary, areaPlain, positionPlain, GLOSSARY, P_PLAIN, C_PLAIN, Z_PLAIN, MW_PLAIN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SoluxMcIntosh = api;
 })(typeof self !== 'undefined' ? self : this);

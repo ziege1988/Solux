@@ -59,6 +59,35 @@ Die Hauptseite „Sonne“ gibt es zusätzlich als Web-App fürs Handy, ohne Auf
 
 Lokal testen: `node scripts/build-web.js`, dann `dist-web/` mit einem beliebigen Webserver ausliefern.
 
+## Push-Mitteilungen
+
+**Mac:** Solux meldet sich direkt über die macOS-Mitteilungen, solange die App läuft (sie läuft im
+Hintergrund). Auslöser einstellbar unter Zahnrad → Hinweise: M-/X-Flares, Polarlicht-Chance, brisante
+NOAA-Warnungen, neue Regionen, gutes Beobachtungsfenster.
+
+**iPhone:** Der Workflow `.github/workflows/push.yml` prüft alle 15 Minuten die NOAA-Daten und sendet bei
+brisanten Ereignissen eine Web-Push-Mitteilung an Solux mobil:
+- X-Flares und M-Flares ab M5
+- Polarlicht-Chance am Standort
+- starke geomagnetische Stürme
+- Protonenereignisse
+
+Bereits gemeldete Ereignisse merkt sich der Workflow, damit nichts doppelt kommt.
+
+Einrichtung (einmalig):
+1. GitHub → Settings → Secrets and variables → Actions → **New repository secret**
+   `VAPID_PRIVATE_KEY` = privater Push-Schlüssel (siehe Nachricht im Chat; der öffentliche liegt in
+   `web/push-config.js`).
+2. Solux mobil vom Home-Bildschirm öffnen → Zahnrad → **Mitteilungen** → **Mitteilungen aktivieren** →
+   erlauben → **Code kopieren**.
+3. Zweites Secret `PUSH_SUBSCRIPTIONS` anlegen und den kopierten Code einfügen. Bei mehreren Geräten die
+   Codes als Liste `[ {…}, {…} ]` eintragen.
+4. Optional: unter **Variables** `PUSH_LAT` = Breitengrad deines Standorts (Standard 50.28).
+5. Test: Actions → „Solux Push“ → **Run workflow** (Testmitteilung ist vorausgewählt).
+
+Hinweis: GitHub startet zeitgesteuerte Workflows mit einigen Minuten Verzögerung und pausiert sie, wenn
+das Repository 60 Tage lang nicht verändert wurde (dann einmal manuell starten).
+
 ## Datenquellen
 
 | Daten | Quelle | Speicher |

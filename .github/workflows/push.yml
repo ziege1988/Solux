@@ -1,0 +1,52 @@
+# Prüft alle 15 Minuten die NOAA-Daten und schickt bei brisanten Ereignissen
+# eine Push-Mitteilung an Solux mobil (iPhone). Einrichtung: siehe README → Push-Mitteilungen.
+name: Solux Push
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Testmitteilung senden'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solux-push
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Bereits gemeldete Ereignisse laden
+        uses: actions/cache/restore@v4
+        with:
+          path: .push-state.json
+          key: push-state-${{ github.run_id }}
+          restore-keys: push-state-
+      - name: web-push installieren
+        run: mkdir -p /tmp/wp && cd /tmp/wp && npm init -y >/dev/null && npm install web-push@3.6.7 --no-audit --no-fund
+      - name: Prüfen und senden
+        env:
+          NODE_PATH: /tmp/wp/node_modules
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
+          PUSH_LAT: ${{ vars.PUSH_LAT }}
+          PUSH_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test }}
+        run: node scripts/push-check.js
+      - name: Gemeldete Ereignisse speichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .push-state.json
+          key: push-state-${{ github.run_id }}

@@ -71,3 +71,6 @@ body { -webkit-text-size-adjust: 100%; }
 @media (prefers-reduced-motion: reduce) { .splash { transition: none; } .splash canvas { animation: none; } }
 
 @media (min-width: 700px) { .widget { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+.helpbtn { width: 40px; height: 40px; font-size: 17px; }
+.gloss dd, .plain p { font-size: 14px; }
+.probs b { font-size: 17px; }

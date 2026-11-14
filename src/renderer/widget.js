@@ -144,15 +144,37 @@
     const maxA = Math.max(10, ...hist.map((h) => h.area || 0));
     const bars = hist.map((h) => `<div title="${h.day}: ${h.cls} ${h.area} MH" style="flex:1;align-self:flex-end;height:${Math.max(4, ((h.area || 0) / maxA) * 46)}px;background:${h.mag && h.mag.includes('D') ? 'var(--bad)' : 'var(--sun)'};opacity:.8;border-radius:2px"></div>`).join('');
     const firstSeen = r.firstDate ? fmt.dateShort.format(new Date(r.firstDate + 'Z')) : '–';
+    const trend = hist.length > 2 ? (() => { const a = hist[hist.length - 3].area || 0, b = hist[hist.length - 1].area || 0; return b > a * 1.2 ? 'wächst' : b < a * 0.8 ? 'schrumpft' : 'bleibt etwa gleich'; })() : null;
+    const pct = (v) => (v == null ? '–' : `${v} %`);
     openPop(`
-      <div class="hd"><div><span class="lbl">NOAA Active Region</span><h2>AR ${r.region}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
-      ${r.spotClass ? `<div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><span class="code">${esc(r.spotClass)}</span><span class="note">Mt. Wilson ${esc(M.magSymbol(r.magClass) || '–')} · ${esc(r.location)} · ${r.area ?? '–'} MH · ${r.numberSpots ?? '–'} Flecken</span></div>` : `<p>Plage-Gebiet ohne Flecken (nur im Kalziumlicht hell) · ${esc(r.location)}</p>`}
-      ${d.parts.length || d.mag.length ? `<dl class="decode">${d.parts.map((p) => `<dt>${p.key}</dt><dd>${p.title}<small>${esc(p.text)}</small></dd>`).join('')}${d.mag.map((m) => `<dt>${m.key}</dt><dd>${m.title}<small>${esc(m.text)}</small></dd>`).join('')}</dl>` : ''}
-      ${r.spotClass ? `<div class="box"><b class="lv-${risk.level}">Flare-Potenzial: ${risk.label}</b><br>${risk.text}<br><span class="note">NOAA-Wahrscheinlichkeit 24 h: C ${r.probs.c ?? '–'} % · M ${r.probs.m ?? '–'} % · X ${r.probs.x ?? '–'} %</span></div>` : ''}
-      ${hist.length > 1 ? `<div><span class="lbl">Entwicklung der Fläche</span><div style="display:flex;gap:2px;height:50px;margin-top:6px">${bars}</div><div class="note" style="display:flex;justify-content:space-between"><span>${hist[0].day.slice(5)}</span><span>${hist[hist.length - 1].day.slice(5)}</span></div></div>` : ''}
-      <div class="kv"><span>Erstmals gesehen</span><span>${firstSeen}</span><span>Flares am Vortag</span><span>${r.flares.c}× C · ${r.flares.m}× M · ${r.flares.x}× X</span><span>Carrington-Länge</span><span>${r.carrLon}°</span></div>
-      <p class="note">MH = millionstel Sonnenhemisphäre. Daten: NOAA SWPC.</p>`);
+      <div class="hd"><div><span class="lbl">Aktive Region · NOAA-Nummer</span><h2>AR ${r.region}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
+      <div class="plain"><span class="lbl">Kurz gesagt</span><p>${esc(M.plainSummary(r.spotClass, r.magClass))}</p></div>
+      ${r.spotClass ? `<div class="explain">
+        <div class="codehead"><span class="code">${esc(r.spotClass)}</span><span class="note">McIntosh-Klasse: drei Buchstaben für Typ, Hof und Verteilung</span></div>
+        <dl class="decode">${d.parts.map((p, i) => `<dt>${p.key}</dt><dd><b>${['Typ und Größe', 'Hof des größten Flecks', 'Wie dicht die Flecken stehen'][i]}</b><small>${esc(i === 0 ? M.Z_PLAIN[p.key] : i === 1 ? M.P_PLAIN[p.key] : M.C_PLAIN[p.key])}</small><small class="tech">Fachbegriff: ${esc(p.text)}</small></dd>`).join('')}</dl>
+      </div>
+      ${d.mag.length ? `<div class="explain"><div class="codehead"><span class="code">${esc(M.magSymbol(r.magClass))}</span><span class="note">Mount-Wilson-Klasse: wie verwickelt das Magnetfeld ist</span></div>
+        <dl class="decode">${d.mag.map((m) => `<dt>${m.key}</dt><dd><b>${m.title}</b><small>${esc(M.MW_PLAIN[{ α: 'A', β: 'B', γ: 'G', δ: 'D' }[m.key]] || m.text)}</small></dd>`).join('')}</dl></div>` : ''}
+      <div class="box"><b class="lv-${risk.level}">Flare-Risiko: ${risk.label}</b><br>${risk.text}
+        <div class="probs"><span>C-Flare<br><b>${pct(r.probs.c)}</b></span><span>M-Flare<br><b>${pct(r.probs.m)}</b></span><span>X-Flare<br><b>${pct(r.probs.x)}</b></span></div>
+        <span class="note">Wahrscheinlichkeit für mindestens einen Flare dieser Stärke in den nächsten 24 h (NOAA). C = klein, M = mittel, X = stark.</span></div>` : ''}
+      <div class="kv">
+        ${r.area ? `<span>Größe</span><span>${esc(M.areaPlain(r.area))}</span>` : ''}
+        ${r.numberSpots ? `<span>Flecken</span><span>${r.numberSpots} einzelne Flecken gezählt</span>` : ''}
+        <span>Lage</span><span>${esc(r.location)} – ${esc(M.positionPlain(r.location) || '')}</span>
+        <span>Erstmals gesehen</span><span>${firstSeen}${trend ? ` · die Fläche ${trend}` : ''}</span>
+        ${r.flares.c || r.flares.m || r.flares.x ? `<span>Flares zuletzt</span><span>${r.flares.c}× C · ${r.flares.m}× M · ${r.flares.x}× X (am Meldetag)</span>` : ''}
+      </div>
+      ${hist.length > 1 ? `<div><span class="lbl">Entwicklung der Fläche (rot = δ-Konfiguration)</span><div style="display:flex;gap:2px;height:50px;margin-top:6px">${bars}</div><div class="note" style="display:flex;justify-content:space-between"><span>${hist[0].day.slice(5)}</span><span>${hist[hist.length - 1].day.slice(5)}</span></div></div>` : ''}
+      <button class="ghost" data-glossary style="align-self:flex-start">Alle Kürzel erklärt</button>
+      <p class="note">Daten: NOAA SWPC. MH = millionstel Sonnenhälfte (eine Erdscheibe ≈ 42 MH).</p>`);
   }
+
+  function showGlossary() {
+    openPop(`<div class="hd"><div><span class="lbl">Glossar</span><h2>Kürzel und Begriffe</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
+      <dl class="gloss">${M.GLOSSARY.map((g) => `<dt><span class="code-s">${esc(g.k)}</span><b>${esc(g.t)}</b></dt><dd>${esc(g.d)}</dd>`).join('')}</dl>`);
+  }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-glossary]')) showGlossary(); });
 
   /* ---------------- Sonnenhöhe ---------------- */
   function drawAltitude() {
@@ -328,6 +350,7 @@
     hinw: (c) => `<h3>Hinweise (Mitteilungen)</h3>
       <label class="chk"><input type="checkbox" data-p="notify.flareM" ${c.notify.flareM ? 'checked' : ''}> Flares ab Klasse M</label>
       <label class="chk"><input type="checkbox" data-p="notify.aurora" ${c.notify.aurora ? 'checked' : ''}> Polarlicht-Chance am Standort</label>
+      <label class="chk"><input type="checkbox" data-p="notify.alerts" ${c.notify.alerts !== false ? 'checked' : ''}> Brisante NOAA-Warnungen (starke Stürme, Protonen, Röntgen > M5)</label>
       <label class="chk"><input type="checkbox" data-p="notify.newRegion" ${c.notify.newRegion ? 'checked' : ''}> Neue aktive Regionen</label>
       <label class="chk"><input type="checkbox" data-p="notify.goodWindow" ${c.notify.goodWindow ? 'checked' : ''}> Gutes Beobachtungsfenster (klar, ruhig, windstill)</label>`,
     upd: (c) => `<h3>Updates</h3>
@@ -336,6 +359,16 @@
       <button class="pbtn" id="chkUpd" style="align-self:flex-start">Nach Updates suchen</button><div id="updRes" style="display:flex;flex-direction:column;gap:8px"></div></div>
       <p class="note">Beim Installieren wird Solux beendet, ersetzt und mit Startbild neu geöffnet. Quelle: GitHub-Releases (${esc(c.update.repo)}).${c.update.lastCheck ? ' Zuletzt geprüft ' + fmt.ago(new Date(c.update.lastCheck).getTime()) + '.' : ''}</p>`,
   };
+
+  SECTIONS.push = () => `<h3>Push-Mitteilungen</h3>
+      <p>Solux meldet sich auf diesem iPhone, wenn auf der Sonne etwas Brisantes passiert: X-Flares und starke M-Flares (ab M5), Polarlicht-Chance an deinem Standort, starke geomagnetische Stürme, Protonenereignisse.</p>
+      <div class="box" id="pushBox">Prüfe …</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="pbtn" id="pushOn">Mitteilungen aktivieren</button><button class="ghost" id="pushTest">Test auf diesem Gerät</button></div>
+      <div id="pushSub" hidden>
+        <p class="note">Letzter Schritt (einmalig): Diesen Code als GitHub-Secret <b>PUSH_SUBSCRIPTIONS</b> speichern. Anleitung siehe README.</p>
+        <textarea id="pushJson" class="inp" rows="5" readonly style="width:100%;font:11px var(--f-mono)"></textarea>
+        <button class="ghost" id="pushCopy">Code kopieren</button>
+      </div>`;
 
   async function openSettings(sec) {
     state.cfg = await api.getConfig();
@@ -377,6 +410,18 @@
       api.storeInfo().then((i) => { $('#storeBox').innerHTML = `Lokaler Verlauf: <b>${i.days} Tage</b>${i.from ? ` (${i.from} bis ${i.to})` : ''}<br><span class="note">Speicher ${(i.bytes / 1048576).toFixed(1)} MB · ${esc(i.dir)}</span>`; });
       $('#refNow').addEventListener('click', async (e) => { e.target.textContent = 'Aktualisiere …'; await api.refresh(); loadSun(); e.target.textContent = 'Aktualisiert ✓'; });
       if (!WEB) { $('#clrImg').addEventListener('click', async (e) => { await api.clearImages(); e.target.textContent = 'Geleert ✓'; }); $('#logBtn').addEventListener('click', () => api.showLog()); }
+    }
+    if (sec === 'push' && api.push) {
+      const show = async () => {
+        const st2 = await api.push.status();
+        $('#pushBox').innerHTML = st2.message;
+        $('#pushOn').hidden = !st2.canSubscribe;
+        if (st2.subscription) { $('#pushSub').hidden = false; $('#pushJson').value = st2.subscription; }
+      };
+      show();
+      $('#pushOn').addEventListener('click', async (e) => { e.target.disabled = true; try { await api.push.subscribe(); } catch (err) { $('#pushBox').textContent = err.message; } e.target.disabled = false; show(); });
+      $('#pushTest').addEventListener('click', () => api.push.test().catch((err) => ($('#pushBox').textContent = err.message)));
+      $('#pushCopy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText($('#pushJson').value); e.target.textContent = 'Kopiert ✓'; } catch { $('#pushJson').select(); } });
     }
     if (sec === 'aufn') body.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => { await api.rec.profileReset(b.dataset.reset); openSettings('aufn'); }));
     if (sec === 'upd') {

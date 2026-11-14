@@ -57,13 +57,13 @@
     }
     samples.sort((a, b) => a - b);
     const med = samples[samples.length >> 1] || 128;
-    const pal = [[0, 0, 0], [40, 10, 80], [110, 50, 190], [200, 160, 255], [250, 240, 255]];
+    const pal = [[0, 0, 0], [72, 30, 140], [150, 95, 235], [222, 196, 255], [255, 252, 255]];
     for (let j = 0, i = 0; j < lum.length; j++, i += 4) {
       const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c + 0.5, py - c + 0.5) / R;
       if (rr > 1.004) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255; continue; }
       const edge = rr > 1 ? 1 - (rr - 1) / 0.004 : 1;
       if (kind === 'ca') {
-        const v = Math.max(0, Math.min(1, (lum[j] / med) * 0.5)) * edge;
+        const v = Math.max(0, Math.min(1, 0.18 + (lum[j] / med) * 0.48)) * edge; // Grundhelligkeit, damit sich die Scheibe vom Schwarz abhebt
         const t = v * (pal.length - 1), k = Math.min(pal.length - 2, t | 0), f = t - k;
         for (let ch = 0; ch < 3; ch++) d[i + ch] = pal[k][ch] + (pal[k + 1][ch] - pal[k][ch]) * f;
       } else {
@@ -75,6 +75,7 @@
       d[i + 3] = 255;
     }
     x.putImageData(id, 0, 0);
+    if (kind === 'ca') drawRim(x, c, R);
     return cv;
   }
 
@@ -92,6 +93,7 @@
       x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
       x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0); x.drawImage(cv, 0, 0);
       x.globalCompositeOperation = 'multiply'; x.fillStyle = '#cfa8ff'; x.fillRect(0, 0, size, size);
+      x.globalCompositeOperation = 'screen'; x.fillStyle = 'rgba(62,26,125,.55)'; x.fillRect(0, 0, size, size); // Grundhelligkeit der Scheibe
     }
     else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
     if (kind !== 'ca') {
@@ -102,7 +104,18 @@
     x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, 7); x.fill();
     x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
     x.globalCompositeOperation = 'source-over';
+    if (kind === 'ca') drawRim(x, c, R);
     return cv;
+  }
+
+  /** Leuchtender Saum am Sonnenrand (Kalzium), damit die Scheibe klar vom Hintergrund abgesetzt ist. */
+  function drawRim(x, c, R) {
+    x.save();
+    const g = x.createRadialGradient(c, c, R * 0.985, c, c, R * 1.06);
+    g.addColorStop(0, 'rgba(205,170,255,.75)'); g.addColorStop(0.25, 'rgba(170,120,255,.35)'); g.addColorStop(1, 'rgba(120,70,220,0)');
+    x.globalCompositeOperation = 'lighter'; x.fillStyle = g;
+    x.beginPath(); x.arc(c, c, R * 1.06, 0, 7); x.arc(c, c, R * 0.985, 0, 7, true); x.fill();
+    x.restore();
   }
 
   const fmt = {
