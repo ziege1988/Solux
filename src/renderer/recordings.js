@@ -21,7 +21,7 @@
   /** C-, M- und X-Flares ±12 h um die Aufnahme, stärkste zuerst; null = keine Flare-Daten für diesen Zeitraum. */
   function dayFlareList() {
     const all = st.dayFlares || [];
-    const covered = all.some((f) => f.max <= st.time.getTime() - 12 * 3600000) || Date.now() - st.time < 30 * 86400000;
+    const covered = !st.flareInfo || (st.flareInfo.missing || []).length < 3 || all.length > 0;
     const list = all.filter((f) => Math.abs(f.max - st.time) < 12 * 3600000 && /^[CMX]/.test(f.cls)).sort((a, b) => flareRank(b.cls) - flareRank(a.cls));
     return list.length || covered ? list : null;
   }
@@ -468,7 +468,9 @@
       const dtMin = Math.round((st.ref.date - st.time) / 60000);
       logLine(`  ✓ ${refImg.label}  ${st.ref.date.toISOString().slice(0, 16).replace('T', ' ')} UTC  (Δt ${dtMin >= 0 ? '+' : ''}${dtMin} min)`, Math.abs(dtMin) > 180 ? 'warn' : 'ok');
       st.regions = reg.regions || []; st.regionsDay = reg.day;
-      try { st.dayFlares = (await api.flares(st.time.getTime() - 36 * 3600000)) || []; } catch { st.dayFlares = []; }
+      try { const fr = await api.flaresAround(st.time.toISOString()); st.dayFlares = fr.flares || []; st.flareInfo = fr; }
+      catch (e) { st.dayFlares = []; st.flareInfo = { missing: ['?', '?', '?'], source: 'Fehler' }; }
+      { const n = dayFlareList(); logLine(n ? `▸ Flares ±12 h  ${n.length} C/M/X-Flare(s) · Quelle: ${st.flareInfo.source}` : '▸ Flares  keine Daten für diesen Zeitraum (NOAA-Archiv nicht erreichbar)', n ? '' : 'warn'); }
       if (reg.day) logLine(`▸ NOAA-Regionen  ${st.regions.filter((r) => r.type === 'spots').length} Fleckengruppen, ${st.regions.filter((r) => r.type !== 'spots').length} Plages  (SRS gültig ${reg.validAt.slice(0, 10)} 00 UT, auf Aufnahmezeit gedreht)`);
       else logLine('▸ NOAA-Regionen  für dieses Datum nicht im lokalen Speicher (60 Tage) – Beschriftung nur mit erkannten Flecken.', 'warn');
 
@@ -1145,8 +1147,9 @@
       L.push('');
       L.push('FLARES ±12 h UM DIE AUFNAHME (NOAA SWPC, GOES-Röntgen)');
       L.push('-'.repeat(60));
-      if (!fl) L.push('   keine Flare-Daten für diesen Zeitraum (Solux speichert Flares 60 Tage)');
-      else if (!fl.length) L.push('   keine C-, M- oder X-Flares');
+      if (!fl) L.push('   keine Flare-Daten für diesen Zeitraum (NOAA-Archiv nicht erreichbar)');
+      else L.push(`   Quelle: ${st.flareInfo && st.flareInfo.source === 'NOAA-Archiv' ? 'NOAA-Ereignisarchiv (NCEI)' : 'NOAA SWPC, lokal gespeichert'}`);
+      if (fl && !fl.length) L.push('   keine C-, M- oder X-Flares');
       for (const f of fl || []) L.push(`   ${f.cls.padEnd(5)} Maximum ${flareWhen(f)}${f.region ? ` · AR ${f.region}` : ' · ohne Region'}${f.location ? ` (${f.location})` : ''}${f.optical ? ` · optisch ${f.optical}` : ''}`);
     }
     if (st.mode === 'ha' && st.proms) {

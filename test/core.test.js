@@ -228,3 +228,22 @@ test('Einstellungen: alte gemeinsame Optik wird je Profil übernommen', () => {
   assert.strictEqual(c.recordings.optics, undefined);
   assert.strictEqual(c.recordings.jpegQuality, undefined);
 });
+
+test('NOAA-Ereignisarchiv: Tagesliste wird in Flares umgesetzt', () => {
+  const txt = [':Product: 20240423events.txt', '#Event    Begin    Max       End  Obs  Q  Type  Loc/Frq   Particulars       Reg#',
+    '#-------------------------------------------------------------------------------', '',
+    '4720 +     0306   0319      0335  G16  5   XRA  1-8A      M3.6    4.0E-02   3654',
+    '4721       0310   0315      0330  LEA  3   FLA  S07E39    1B                3654',
+    '4730 +     2350   0005      0020  G16  5   XRA  1-8A      C2.0    1.0E-03       ',
+    '4740       0313   0314      0315  LEA  G   RBR  1415      230                   '].join('\n');
+  const ev = SW15.parseEvents(txt, '2024-04-23');
+  assert.strictEqual(ev.length, 3);
+  const f = SW15.flareEvents(ev);
+  const m = f.find((x) => x.cls === 'M3.6');
+  assert.strictEqual(m.region, 3654); assert.strictEqual(m.location, 'S07E39');
+  assert.strictEqual(new Date(m.max).toISOString(), '2024-04-23T03:19:00.000Z');
+  const c = f.find((x) => x.cls === 'C2.0');
+  assert.strictEqual(c.region, null);
+  assert.strictEqual(new Date(c.max).toISOString(), '2024-04-24T00:05:00.000Z'); // über Mitternacht
+  assert.match(SW15.eventsArchiveUrl('2024-04-23'), /solar_event_reports\/2024\/04\/20240423events\.txt$/);
+});

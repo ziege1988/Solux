@@ -125,6 +125,42 @@ class DataStore {
   flares(sinceMs) {
     return SW.flareEvents(Object.values(this.load('events.json', {}))).filter((f) => !sinceMs || f.max >= sinceMs);
   }
+  /**
+   * Flares rund um einen Zeitpunkt (±36 h). Liegt der Zeitraum im lokalen 60-Tage-Speicher, kommen sie von dort,
+   * sonst aus dem NOAA-Archiv (Tageslisten seit 1996, dauerhaft zwischengespeichert in archive-events.json).
+   * Rückgabe {flares, source, missing[]} – missing = Tage ohne Daten.
+   */
+  async flaresAround(date) {
+    const t = new Date(date).getTime(), H = 3600000;
+    const local = Object.values(this.load('events.json', {}));
+    const first = local.reduce((m, e) => Math.min(m, new Date((e.begin_datetime || '') + 'Z').getTime() || Infinity), Infinity);
+    const recent = Date.now() - t < 2 * 86400000;
+    let events = local, source = 'lokal';
+    const missing = [];
+    if (!(first < t - 36 * H) && !recent) {
+      const arch = this.load('archive-events.json', {});
+      const days = [-1, 0, 1].map((d) => new Date(t + d * 86400000).toISOString().slice(0, 10));
+      let changed = false;
+      for (const day of days) {
+        if (!arch[day]) {
+          try {
+            const res = await httpFetch(SW.eventsArchiveUrl(day), { signal: AbortSignal.timeout(30000) });
+            if (!res.ok) { missing.push(day); continue; }
+            const ev = SW.parseEvents(await res.text(), day);
+            // Die Tagesliste wird erst nach ein paar Tagen endgültig – jüngere Tage nicht dauerhaft speichern
+            if (Date.now() - new Date(day).getTime() > 5 * 86400000) { arch[day] = ev; changed = true; }
+            events = events.concat(ev);
+          } catch (e) { this.log('NOAA-Ereignisarchiv: ' + e.message); missing.push(day); }
+        } else events = events.concat(arch[day]);
+      }
+      if (changed) this.save('archive-events.json', arch);
+      source = 'NOAA-Archiv';
+    }
+    const seen = new Set();
+    const uniq = events.filter((e) => { const k = `${e.type}|${e.begin_datetime}|${e.particulars1}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    const flares = SW.flareEvents(uniq).filter((f) => Math.abs(f.max - t) <= 36 * H);
+    return { flares, source, missing };
+  }
   regionHistory(num) { return SW.regionHistory(Object.values(this.load('regions.json', {})), num); }
 
   /* ---------------- Sonnenbilder ---------------- */

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('solux', {
   regions: inv('data:regions'),
   regionHistory: inv('data:regionHistory'),
   flares: inv('data:flares'),
+  flaresAround: inv('data:flaresAround'),
   news: inv('data:news'),
   weather: inv('data:weather'),
   rateSeeing: inv('data:rateSeeing'),

@@ -35,6 +35,43 @@
     return `${SRS_ARCHIVE}/${y}/${m}/${y}${m}${day}SRS.txt`;
   }
   /** Ausgabetage, deren Berichte für einen Zeitpunkt gebraucht werden (gültig 00 UT des Ausgabetags). */
+  /* ---------------- Ereignis-Archiv (Flares, lückenlos seit 1996) ---------------- */
+  const EVENTS_ARCHIVE = 'https://www.ngdc.noaa.gov/stp/space-weather/swpc-products/daily_reports/solar_event_reports';
+  function eventsArchiveUrl(day) {
+    const [y, m, d] = day.split('-');
+    return `${EVENTS_ARCHIVE}/${y}/${m}/${y}${m}${d}events.txt`;
+  }
+  /**
+   * Tagesliste "Edited Events" (YYYYMMDDevents.txt) -> Objekte im Format von edited_events.json
+   * (nur Röntgen-Flares XRA und optische Flares FLA). day = 'YYYY-MM-DD'.
+   */
+  function parseEvents(text, day) {
+    const lines = String(text).split(/\r?\n/);
+    const head = lines.find((l) => /^#Event/.test(l)) || '';
+    const regCol = head.indexOf('Reg#');
+    const base = new Date(day + 'T00:00:00Z').getTime();
+    const tm = (v, ref) => {
+      const m = /(\d{2})(\d{2})/.exec(v || ''); if (!m || /\/\//.test(v)) return null;
+      let t = base + (+m[1] * 60 + +m[2]) * 60000;
+      if (ref != null && t < ref - 6 * 3600000) t += 86400000; // über Mitternacht
+      return new Date(t).toISOString().slice(0, 19);
+    };
+    const out = [];
+    for (const l of lines) {
+      if (!l.trim() || /^[#:]/.test(l)) continue;
+      const tok = l.trim().split(/\s+/);
+      if (tok[1] === '+') tok.splice(1, 1);
+      const [, b, mx, e, obs, q, type, loc, ...rest] = tok;
+      if (type !== 'XRA' && type !== 'FLA') continue;
+      const reg = regCol > 0 ? parseInt(l.slice(regCol).trim(), 10) : NaN;
+      const part = rest.filter((x) => !(regCol > 0 && x === String(reg) && l.trimEnd().endsWith(x)));
+      const begin = tm(b), bt = begin ? new Date(begin + 'Z').getTime() : base;
+      out.push({ type, begin_datetime: begin, max_datetime: tm(mx, bt), end_datetime: tm(e, bt), observatory: obs, quality: q,
+        location: type === 'FLA' ? loc : '', frequency: type === 'XRA' ? loc : null, particulars1: part[0] || '', particulars2: part[1] || null, region: Number.isFinite(reg) ? reg : null, source: 'archiv' });
+    }
+    return out;
+  }
+
   function srsIssueDays(date) {
     const t = new Date(date), d0 = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
     return [d0, new Date(d0.getTime() + 86400000)].map((d) => d.toISOString().slice(0, 10));
@@ -358,6 +395,6 @@
     return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
   }
 
-  const api = { newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, weatherDayUrl, modelSeeingAt, buildWeather, buildNews, translateAlert };
+  const api = { EVENTS_ARCHIVE, eventsArchiveUrl, parseEvents, newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, weatherDayUrl, modelSeeingAt, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);

@@ -238,6 +238,7 @@ function registerIpc() {
   ipcMain.handle('data:regions', (_e, date) => store.regionsFor(date ? new Date(date) : new Date()));
   ipcMain.handle('data:regionHistory', (_e, num) => store.regionHistory(num));
   ipcMain.handle('data:flares', (_e, since) => store.flares(since));
+  ipcMain.handle('data:flaresAround', (_e, date) => store.flaresAround(date));
   ipcMain.handle('data:news', () => store.news(config.get()));
   ipcMain.handle('data:weather', () => store.weather(config.get()));
   ipcMain.handle('data:rateSeeing', (_e, rating, model) => store.addRating(rating, model));

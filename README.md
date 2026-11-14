@@ -69,7 +69,8 @@ beschriftet und mit Legende und Textdatei gespeichert.
   Im Bild sind sie markiert, in Legende und Textdatei aufgeführt.
   **Flares** des Aufnahmetags (±12 h) sind bei H-Alpha standardmäßig markiert: je Region der stärkste, z. B. „M1.8 +36“.
   Dazu kommen ein Abschnitt in der Legende, ein Satz in der Zusammenfassung und eine vollständige Liste in der
-  Textdatei. Flare-Daten speichert Solux 60 Tage; bei älteren Aufnahmen steht „keine Flare-Daten“.
+  Textdatei. Flares der letzten 60 Tage hat Solux lokal. Für ältere Aufnahmen lädt es die Tagesliste aus dem
+  NOAA-Ereignisarchiv (NCEI, lückenlos seit 1996) und speichert sie dauerhaft.
 - **Bildschärfe:** Solux misst die Breite des Randabfalls in Bogensekunden. Bei Weißlicht kalibriert das automatisch das
   Seeing-Modell (siehe unten).
 - **Beobachtungstagebuch** (Knopf „Tagebuch“): Jede ausgewertete Aufnahme wird automatisch mit diesen Angaben gespeichert:
