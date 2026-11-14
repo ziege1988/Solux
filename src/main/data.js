@@ -57,8 +57,9 @@ class DataStore {
       this.fetchJSON(SWPC_URLS.alerts),
       this.fetchJSON(SWPC_URLS.ssn),
       this.fetchJSON(SWPC_URLS.flux),
+      this.fetchJSON(SWPC_URLS.events, 60000),
     ]);
-    const [reg, flr, kp, alerts, ssn, flux] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
+    const [reg, flr, kp, alerts, ssn, flux, events] = results.map((r) => (r.status === 'fulfilled' ? r.value : null));
     results.forEach((r) => r.status === 'rejected' && this.log('Abruf fehlgeschlagen: ' + r.reason.message));
 
     if (reg) {
@@ -85,6 +86,12 @@ class DataStore {
       for (const k of Object.keys(store)) if (new Date(k.split('|')[0].replace(' ', 'T') + 'Z').getTime() < cutoff) delete store[k];
       this.save('alerts.json', store);
     }
+    if (events) {
+      const store = this.load('events.json', {});
+      for (const e of events) if (e.type === 'XRA' || e.type === 'FLA') store[`${e.type}|${e.begin_datetime}|${e.region || ''}`] = e;
+      for (const k of Object.keys(store)) if (new Date(k.split('|')[1] + 'Z').getTime() < cutoff) delete store[k];
+      this.save('events.json', store);
+    }
     const misc = this.load('misc.json', {});
     if (ssn && ssn.length) misc.ssn = ssn[ssn.length - 1];
     if (flux && flux.length) misc.flux = flux[0];
@@ -94,7 +101,30 @@ class DataStore {
   }
 
   /* ---------------- Regionen für einen Zeitpunkt ---------------- */
-  regionsFor(date) { return SW.computeRegions(Object.values(this.load('regions.json', {})), date); }
+  /** Regionen für einen Zeitpunkt – aus dem 60-Tage-Speicher, sonst aus dem NOAA-Archiv (Tagesberichte). */
+  async regionsFor(date) {
+    const local = SW.computeRegions(Object.values(this.load('regions.json', {})), date);
+    if (local.day && Math.abs(new Date(local.validAt) - date) < 1.5 * 86400000) return local;
+    const arch = this.load('archive.json', {});
+    const rows = [];
+    for (const day of SW.srsIssueDays(date)) {
+      if (!arch[day]) {
+        try {
+          const res = await httpFetch(SW.srsArchiveUrl(day), { signal: AbortSignal.timeout(30000) });
+          if (!res.ok) continue;
+          arch[day] = SW.parseSRS(await res.text(), day);
+          this.save('archive.json', arch);
+        } catch (e) { this.log('NOAA-Archiv: ' + e.message); continue; }
+      }
+      rows.push(...arch[day]);
+    }
+    const r = SW.computeRegions(rows, date);
+    return r.day ? { ...r, source: 'NOAA-Archiv' } : local;
+  }
+  /** Flares mit Region/Ort aus den gespeicherten Ereignissen. */
+  flares(sinceMs) {
+    return SW.flareEvents(Object.values(this.load('events.json', {}))).filter((f) => !sinceMs || f.max >= sinceMs);
+  }
   regionHistory(num) { return SW.regionHistory(Object.values(this.load('regions.json', {})), num); }
 
   /* ---------------- Sonnenbilder ---------------- */
@@ -151,7 +181,7 @@ class DataStore {
     const misc = this.load('misc.json', {});
     return SW.buildNews({
       flares: Object.values(this.load('flares.json', {})), kp: Object.values(this.load('kp.json', {})),
-      alerts: Object.values(this.load('alerts.json', {})), regions: Object.values(this.load('regions.json', {})),
+      alerts: Object.values(this.load('alerts.json', {})), regions: Object.values(this.load('regions.json', {})), events: Object.values(this.load('events.json', {})),
       ssn: misc.ssn ? misc.ssn.swpc_ssn : null, flux: misc.flux ? misc.flux.flux : null, updated: misc.updated,
     }, cfg.location);
   }

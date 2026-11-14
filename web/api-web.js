@@ -8,7 +8,7 @@
 (() => {
   'use strict';
   const SW = window.SoluxSW, S = window.SoluxSeeing;
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -53,7 +53,7 @@
   let sw = LS.get('sw', null);
   let swLoading = null;
   async function refresh() {
-    const keys = ['regions', 'flares', 'kp', 'alerts', 'ssn', 'flux'];
+    const keys = ['regions', 'flares', 'kp', 'alerts', 'ssn', 'flux', 'events'];
     const res = await Promise.allSettled(keys.map((k) => getJSON(SW.SWPC_URLS[k])));
     const d = { ...(sw || {}) };
     res.forEach((r, i) => {
@@ -62,6 +62,7 @@
       if (k === 'kp') d.kp = SW.normKp(v);
       else if (k === 'ssn') d.ssn = v.length ? v[v.length - 1].swpc_ssn : d.ssn;
       else if (k === 'flux') d.flux = v.length ? v[0].flux : d.flux;
+      else if (k === 'events') d.events = v.filter((e) => e.type === 'XRA' || e.type === 'FLA');
       else d[k] = v;
     });
     d.updated = new Date().toISOString();
@@ -102,7 +103,16 @@
       const src = SW.SOURCES[kind] || SW.SOURCES.wl;
       return { kind, label: src.label, date: new Date(meta.date.replace(' ', 'T') + 'Z').toISOString(), size: SW.IMG_SIZE, radiusPx: SW.IMG_SIZE * SW.DISC_FRACTION, url: SW.screenshotUrl(kind, meta) };
     },
-    regions: async (iso) => SW.computeRegions((await ensureData()).regions, iso ? new Date(iso) : new Date()),
+    regions: async (iso) => {
+      const date = iso ? new Date(iso) : new Date();
+      const local = SW.computeRegions((await ensureData()).regions, date);
+      if (local.day && Math.abs(new Date(local.validAt) - date) < 1.5 * 86400000) return local;
+      const rows = [];
+      for (const day of SW.srsIssueDays(date)) { try { const r = await fetch(SW.srsArchiveUrl(day)); if (r.ok) rows.push(...SW.parseSRS(await r.text(), day)); } catch { /* offline */ } }
+      const r = SW.computeRegions(rows, date);
+      return r.day ? { ...r, source: 'NOAA-Archiv' } : local;
+    },
+    flares: async (since) => SW.flareEvents((await ensureData()).events).filter((f) => !since || f.max >= since),
     regionHistory: async (num) => SW.regionHistory((await ensureData()).regions, num),
     news: async () => { const d = await ensureData(); return SW.buildNews(d, cfg.location); },
     weather,
@@ -130,26 +140,41 @@
     rec: { profileReset: async () => ({}) },
     update: { check: async () => ({ available: false, message: 'Die Handy-Version aktualisiert sich automatisch.' }), install: async () => false },
     push: {
+      // Code für das GitHub-Secret: Abo + gewünschte Stufe
+      _code(sub, mode) { return JSON.stringify({ mode, subscription: sub }); },
       async status() {
+        const mode = LS.get('pushMode', 'interessant');
         const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { message: standalone ? 'Dieses Gerät unterstützt keine Web-Push-Mitteilungen (iOS 16.4 oder neuer nötig).' : 'Auf dem iPhone funktionieren Mitteilungen nur, wenn Solux über „Zum Home-Bildschirm“ installiert und von dort geöffnet wurde.', canSubscribe: false };
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { mode, message: standalone ? 'Dieses Gerät unterstützt keine Web-Push-Mitteilungen (iOS 16.4 oder neuer nötig).' : 'Mitteilungen gibt es nur in der installierten App (Safari → Teilen → Zum Home-Bildschirm).', canSubscribe: false };
         const reg = await navigator.serviceWorker.getRegistration();
-        if (!reg) return { message: 'Mitteilungen gibt es nur in der installierten App (Safari → Teilen → Zum Home-Bildschirm).', canSubscribe: false };
+        if (!reg) return { mode, message: 'Mitteilungen gibt es nur in der installierten App (Safari → Teilen → Zum Home-Bildschirm).', canSubscribe: false };
         const sub = await reg.pushManager.getSubscription();
-        const perm = Notification.permission;
-        if (sub) return { message: '<b class="lv-ok">Aktiv</b> auf diesem Gerät. Falls noch nicht geschehen: Code unten als GitHub-Secret hinterlegen.', canSubscribe: false, subscription: JSON.stringify(sub) };
-        if (perm === 'denied') return { message: 'Mitteilungen sind blockiert. In den iOS-Einstellungen → Mitteilungen → Solux erlauben.', canSubscribe: false };
-        return { message: 'Noch nicht aktiviert.', canSubscribe: true };
+        if (mode === 'aus') return { mode, message: 'Mitteilungen sind <b>aus</b>. Dieses Gerät erhält keine Push-Meldungen mehr.', canSubscribe: false };
+        if (sub) {
+          const code = this._code(sub.toJSON(), mode), last = LS.get('pushCode', null);
+          return { mode, message: `<b class="lv-ok">Aktiv</b> · Stufe „${mode === 'alle' ? 'Alle neuen Meldungen' : 'Nur interessante'}“.`, canSubscribe: false, code, codeChanged: !!last && last !== code };
+        }
+        if (Notification.permission === 'denied') return { mode, message: 'Mitteilungen sind blockiert. iOS-Einstellungen → Mitteilungen → Solux erlauben.', canSubscribe: false };
+        return { mode, message: 'Noch nicht aktiviert.', canSubscribe: true };
+      },
+      async setMode(mode) {
+        LS.set('pushMode', mode);
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg && (await reg.pushManager.getSubscription());
+        if (mode === 'aus' && sub) await sub.unsubscribe();
       },
       async subscribe() {
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') throw new Error('Mitteilungen wurden nicht erlaubt.');
+        if (LS.get('pushMode', 'interessant') === 'aus') LS.set('pushMode', 'interessant');
         const reg = await navigator.serviceWorker.ready;
         const key = window.SOLUX_PUSH.publicKey.replace(/-/g, '+').replace(/_/g, '/');
         const raw = atob(key + '='.repeat((4 - (key.length % 4)) % 4));
         const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
-        return JSON.stringify(sub);
+        LS.set('pushCode', this._code(sub.toJSON(), LS.get('pushMode', 'interessant')));
+        return true;
       },
+      markCopied(code) { LS.set('pushCode', code); },
       async test() {
         if (Notification.permission !== 'granted') throw new Error('Zuerst Mitteilungen aktivieren.');
         const reg = await navigator.serviceWorker.ready;

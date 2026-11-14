@@ -82,6 +82,9 @@
     loadPath(p);
     if (o) setTimeout(() => {
       if (o.type) $('#inType').value = o.type;
+      if (o.date) { $('#inDate').value = o.date; }
+      if (o.time) { $('#inTime').value = o.time; $('#inNoTime').checked = false; $('#inTime').disabled = false; }
+      if (o.noTime) { $('#inNoTime').checked = true; }
       if (o.focal) $('#inFocal').value = o.focal;
       if (o.pixel) $('#inPixel').value = o.pixel;
       if (o.mode) $(`#inMode [data-k="${o.mode}"]`).click();
@@ -106,8 +109,9 @@
       }
       st.src = cv;
       // Zeit bestimmen
-      const t = exifTime(f.exif, st.cfg.recordings.cameraTime);
-      if (t) { st.time = t.date; st.timeSource = t.source; } else { st.time = new Date(f.mtime); st.timeSource = 'Dateidatum (keine EXIF-Zeit)'; }
+      // Datum aus dem Dateinamen (EXIF ist nach der Bildbearbeitung nicht verlässlich)
+      st.nameDate = window.SoluxFileDate.parseNameDate(f.name);
+      st.time = null; st.timeUnknown = false;
       // Wellenlänge aus Dateiname/Ordner erraten
       if (/(^|[^a-z])(ca|cak|ca-k|calcium|kalzium|caii|393)([^a-z]|$)/i.test(f.path)) setMode('ca', false);
       else if (/(weiss|weiß|wl|white|herschel|kontinuum)/i.test(f.path)) setMode('wl', false);
@@ -151,14 +155,26 @@
   }
   function askIntake() {
     return new Promise((resolve) => {
-      const d = st.time, z = $('#inZone');
-      const fill = () => {
-        if (z.value === 'utc') { $('#inDate').value = d.toISOString().slice(0, 10); $('#inTime').value = d.toISOString().slice(11, 19); }
-        else { $('#inDate').value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; $('#inTime').value = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; }
+      const z = $('#inZone'), nd = st.nameDate;
+      const setFields = (d, zone) => {
+        if (!d) { $('#inDate').value = ''; $('#inTime').value = ''; return; }
+        if (zone === 'utc') { $('#inDate').value = d.toISOString().slice(0, 10); $('#inTime').value = st.timeUnknown ? '' : d.toISOString().slice(11, 19); }
+        else { $('#inDate').value = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; $('#inTime').value = st.timeUnknown ? '' : `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`; }
       };
-      z.value = 'local'; fill(); z.onchange = fill;
+      let hint = '';
+      if (st.time) { z.value = 'local'; setFields(st.time, 'local'); $('#inNoTime').checked = !!st.timeUnknown; hint = 'Zuletzt verwendete Einordnung.'; }
+      else if (nd) {
+        z.value = nd.time && nd.time.utc ? 'utc' : 'local';
+        $('#inDate').value = `${nd.y}-${pad2(nd.m)}-${pad2(nd.d)}`;
+        $('#inTime').value = nd.time ? `${pad2(nd.time.hh)}:${pad2(nd.time.mm)}:${pad2(nd.time.ss)}` : '';
+        $('#inNoTime').checked = !nd.time;
+        hint = `Aus dem Dateinamen erkannt: ${nd.text}.` + (nd.yearGuessed ? ` <b class="lv-warn">Das Jahr steht nicht im Namen – ${nd.y} angenommen. Bitte prüfen!</b>` : '') + (nd.time ? '' : ' Keine Uhrzeit im Namen.');
+      } else { z.value = 'local'; setFields(null); $('#inNoTime').checked = false; hint = '<b class="lv-warn">Kein Datum im Dateinamen gefunden – bitte Datum und Uhrzeit eintragen.</b>'; }
+      z.onchange = () => { const cur = readTime(z.value === 'utc' ? 'local' : 'utc'); if (cur) setFields(cur, z.value); };
+      const syncNoTime = () => { $('#inTime').disabled = $('#inNoTime').checked; };
+      $('#inNoTime').onchange = syncNoTime; syncNoTime();
       $('#inFile').textContent = `${st.file.name} · ${st.src.width}×${st.src.height} px`;
-      $('#inSrc').textContent = `Vorschlag aus: ${st.timeSource}. Bitte prüfen – die Zeit bestimmt Referenzbild und Fleckenpositionen.`;
+      $('#inSrc').innerHTML = hint + ' Datum und Uhrzeit bestimmen Referenzbild und Fleckenpositionen.';
       const setM = (m) => document.querySelectorAll('#inMode button').forEach((b) => b.classList.toggle('on', b.dataset.k === m));
       let mode = st.mode; setM(mode);
       $('#inMode').onclick = (e) => { const b = e.target.closest('button'); if (b) { mode = b.dataset.k; setM(mode); } };
@@ -168,23 +184,33 @@
       ['inFocal', 'inPixel', 'inBin', 'inType'].forEach((id) => { $('#' + id).oninput = updateIntakeScale; $('#' + id).onchange = updateIntakeScale; });
       updateIntakeScale();
       $('#intake').hidden = false;
-      setTimeout(() => $('#inStart').focus(), 50);
+      setTimeout(() => ($('#inDate').value ? $('#inStart') : $('#inDate')).focus(), 50);
       const close = (ok) => { $('#intake').hidden = true; resolve(ok); };
       $('#inCancel').onclick = () => close(false);
       $('#intakeForm').onsubmit = (e) => {
         e.preventDefault();
-        const t = new Date(`${$('#inDate').value}T${$('#inTime').value}${z.value === 'utc' ? 'Z' : ''}`);
-        if (isNaN(t)) { $('#inSrc').textContent = 'Bitte gültiges Datum und Uhrzeit eingeben.'; return; }
-        if (t.getTime() !== st.time.getTime()) { st.time = t; st.timeSource = 'im Dialog bestätigt/geändert'; } else st.timeSource += ' · bestätigt';
+        if (!$('#inDate').value) { $('#inSrc').innerHTML = '<b class="lv-bad">Bitte das Aufnahmedatum eintragen.</b>'; return; }
+        if (!$('#inNoTime').checked && !$('#inTime').value) { $('#inSrc').innerHTML = '<b class="lv-bad">Bitte die Uhrzeit eintragen oder „Uhrzeit unbekannt“ anhaken.</b>'; return; }
+        const t = readTime(z.value);
+        if (!t || isNaN(t)) { $('#inSrc').innerHTML = '<b class="lv-bad">Datum oder Uhrzeit ist ungültig.</b>'; return; }
+        st.time = t; st.timeUnknown = $('#inNoTime').checked;
+        st.timeSource = st.timeUnknown ? 'Datum bestätigt, Uhrzeit unbekannt (12:00 Ortszeit angenommen)' : nd ? 'Dateiname, im Dialog bestätigt' : 'im Dialog eingetragen';
         st.imgType = $('#inType').value;
         st.scaleFull = intakeScale();
         const optics = { focal: parseFloat($('#inFocal').value) || null, pixel: parseFloat($('#inPixel').value) || null, binning: parseInt($('#inBin').value, 10) || 1 };
         st.cfg.recordings.optics = optics; api.setConfig({ recordings: { optics } });
         if (mode !== st.mode) setMode(mode, false);
-        $('#intakeInfo').textContent = `${fmt.dateShort.format(st.time)} ${fmt.time.format(st.time)} · ${MODE_LABEL[st.mode]}`;
+        $('#intakeInfo').textContent = `${fmt.dateShort.format(st.time)} ${st.timeUnknown ? '(Uhrzeit unbekannt)' : fmt.time.format(st.time)} · ${MODE_LABEL[st.mode]}`;
         close(true);
       };
     });
+  }
+  /** Datum/Uhrzeit aus dem Dialog lesen (Uhrzeit unbekannt = 12:00 Ortszeit). */
+  function readTime(zone) {
+    const dv = $('#inDate').value; if (!dv) return null;
+    if ($('#inNoTime').checked) return new Date(`${dv}T12:00:00`);
+    const tv = $('#inTime').value; if (!tv) return null;
+    return new Date(`${dv}T${tv.length === 5 ? tv + ':00' : tv}${zone === 'utc' ? 'Z' : ''}`);
   }
   $('#intakeBtn').addEventListener('click', async () => { if (st.src && (await askIntake())) processImage(); });
 
@@ -626,7 +652,7 @@
     const how = { auto: 'automatisch (SDO-Abgleich)', field: 'fortgeschrieben (Bildfeldrotation)', manual: 'manuell', none: 'nicht ausgerichtet' }[al.method];
     const lines = [
       ['h', `Solux · ${MODE_LABEL[st.mode]}`],
-      ['t', `${fmt.utcDate(st.time)}  ${st.time.toISOString().slice(11, 19)} UTC`],
+      ['t', st.timeUnknown ? `${fmt.utcDate(st.time)} · Uhrzeit unbekannt` : `${fmt.utcDate(st.time)}  ${st.time.toISOString().slice(11, 19)} UTC`],
       ['m', `Ortszeit ${fmt.time.format(st.time)} · ${loc.name}`],
       ['m', `Sonnenhöhe ${e.alt.toFixed(1)}° · Azimut ${e.az.toFixed(0)}°`],
       ['m', `P ${e.P.toFixed(1)}°  B₀ ${e.B0.toFixed(2)}°  L₀ ${e.L0.toFixed(1)}°  CR ${e.cr}`],

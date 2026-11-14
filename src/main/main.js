@@ -11,6 +11,7 @@ const { Config } = require('./config');
 const { DataStore, setFetch: setDataFetch } = require('./data');
 const updater = require('./updater');
 const astro = require('../shared/astro');
+const SW = require('../shared/spaceweather');
 
 const R = (...p) => path.join(__dirname, '..', ...p);
 const BUILD = path.join(__dirname, '..', '..', 'build');
@@ -142,22 +143,24 @@ function scheduleRefresh() {
   refreshTimer = setInterval(refresh, min * 60000);
 }
 
-function checkNotifications() {
+/**
+ * Mitteilungen am Mac – gleiche Regeln wie beim Handy (spaceweather.pushMessages):
+ * Stufe alle / interessant / aus, nur bei Sonne über dem Horizont, jede Meldung höchstens einmal am Tag.
+ */
+async function checkNotifications() {
   if (!Notification.isSupported()) return;
   const cfg = config.get();
+  const mode = cfg.notify.mode || 'interessant';
+  if (mode === 'aus') return;
+  const { lat, lon } = cfg.location;
+  if (astro.sunAltAz(new Date(), lat, lon).alt <= 0) return;
   const seen = new Set(cfg.notify.seen || []);
-  const news = store.news(cfg);
-  const fresh = [];
-  for (const n of news.items) {
-    const key = `${n.kind}|${n.title}|${new Date(n.time).toISOString().slice(0, 13)}`;
-    if (seen.has(key)) continue;
-    const want = (n.kind === 'flare' && n.level !== 'ok' && cfg.notify.flareM) || (n.kind === 'aurora' && cfg.notify.aurora) || (n.kind === 'region' && cfg.notify.newRegion)
-      || (n.kind === 'alert' && n.level === 'bad' && cfg.notify.alerts !== false);
-    if (want && Date.now() - n.time < 6 * 3600000) fresh.push(n);
-    seen.add(key);
-  }
-  for (const n of fresh.slice(0, 3)) new Notification({ title: `Solux · ${n.title}`, body: n.detail, silent: false }).show();
-  config.set({ notify: { seen: [...seen].slice(-300) } });
+  let regions = [];
+  try { regions = (await store.regionsFor(new Date())).regions; } catch { /* offline */ }
+  const msgs = SW.pushMessages(store.news(cfg), regions, mode).filter((m) => !seen.has(m.key));
+  for (const m of msgs.slice(0, 3)) new Notification({ title: m.title, body: m.body, silent: false }).show();
+  for (const m of msgs) seen.add(m.key);
+  config.set({ notify: { seen: [...seen].slice(-400) } });
 }
 
 async function checkGoodWindow() {
@@ -233,6 +236,7 @@ function registerIpc() {
   ipcMain.handle('data:sun', (_e, kind, date, size) => store.sunImage(kind, date, Math.min(4096, size || undefined) || undefined));
   ipcMain.handle('data:regions', (_e, date) => store.regionsFor(date ? new Date(date) : new Date()));
   ipcMain.handle('data:regionHistory', (_e, num) => store.regionHistory(num));
+  ipcMain.handle('data:flares', (_e, since) => store.flares(since));
   ipcMain.handle('data:news', () => store.news(config.get()));
   ipcMain.handle('data:weather', () => store.weather(config.get()));
   ipcMain.handle('data:rateSeeing', (_e, rating, model) => store.addRating(rating, model));

@@ -22,6 +22,7 @@ html, body { background: transparent; height: 100%; overflow: hidden; user-selec
 .cap-date { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cap-time { font-family: var(--f-mono); font-size: 13px; color: var(--sun); }
 .kind-ca .cap-time { color: var(--ca); }
+.kind-ha .cap-time { color: #ff9a70; }
 .cap-src { font-size: 10.5px; color: var(--muted); margin-bottom: 8px; }
 .arlist { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; max-height: 170px; }
 .arbtn { width: 100%; display: grid; grid-template-columns: auto 1fr; column-gap: 6px; text-align: left; padding: 3px 5px; border-radius: 6px; border: 1px solid transparent; font-variant-numeric: tabular-nums; }
@@ -109,3 +110,8 @@ html, body { background: transparent; height: 100%; overflow: hidden; user-selec
 .code-s { font-family: var(--f-mono); color: var(--sun); font-size: 12px; background: var(--panel); padding: 1px 6px; border-radius: 5px; }
 .helpbtn { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); font-weight: 700; font-size: 14px; }
 .helpbtn:hover { color: var(--sun); background: var(--panel); }
+
+.flist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.fl { font-family: var(--f-mono); font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line2); }
+.fl small { display: block; font-size: 9.5px; color: var(--muted); }
+.fl.M { border-color: #ef9230; color: #ffcf9e; } .fl.X { border-color: #e5484d; color: #ffb3b5; }

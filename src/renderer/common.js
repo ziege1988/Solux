@@ -57,13 +57,18 @@
     }
     samples.sort((a, b) => a - b);
     const med = samples[samples.length >> 1] || 128;
-    const pal = [[0, 0, 0], [72, 30, 140], [150, 95, 235], [222, 196, 255], [255, 252, 255]];
+    // Ring-Mediane: Randverdunkelung ausgleichen (sonst kippt der Rand bei Kalzium/H-Alpha ins Schwarze)
+    const NB = 48, bins = Array.from({ length: NB }, () => []);
+    if (kind !== 'wl') for (let j = 0; j < lum.length; j += 3) { const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c, py - c) / R; if (rr < 0.995) bins[Math.min(NB - 1, (rr * NB) | 0)].push(lum[j]); }
+    const ringMed = bins.map((b) => { if (!b.length) return med; b.sort((a, c2) => a - c2); return b[b.length >> 1]; });
+    const pal = kind === 'ha' ? [[0, 0, 0], [105, 16, 6], [190, 52, 20], [246, 132, 70], [255, 226, 190]] : [[0, 0, 0], [72, 30, 140], [150, 95, 235], [222, 196, 255], [255, 252, 255]];
     for (let j = 0, i = 0; j < lum.length; j++, i += 4) {
       const px = j % size, py = (j / size) | 0, rr = Math.hypot(px - c + 0.5, py - c + 0.5) / R;
       if (rr > 1.004) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255; continue; }
       const edge = rr > 1 ? 1 - (rr - 1) / 0.004 : 1;
-      if (kind === 'ca') {
-        const v = Math.max(0, Math.min(1, 0.18 + (lum[j] / med) * 0.48)) * edge; // Grundhelligkeit, damit sich die Scheibe vom Schwarz abhebt
+      if (kind === 'ca' || kind === 'ha') {
+        // Kalzium: Grundhelligkeit, damit sich die Scheibe vom Schwarz abhebt · H-Alpha: Kontrast für Filamente und Plages anheben
+        const q = lum[j] / ringMed[Math.min(NB - 1, (Math.min(rr, 0.999) * NB) | 0)], v = Math.max(0, Math.min(1, kind === 'ha' ? 0.52 + (q - 1) * 2.2 : 0.18 + q * 0.48)) * edge;
         const t = v * (pal.length - 1), k = Math.min(pal.length - 2, t | 0), f = t - k;
         for (let ch = 0; ch < 3; ch++) d[i + ch] = pal[k][ch] + (pal[k + 1][ch] - pal[k][ch]) * f;
       } else {
@@ -75,7 +80,7 @@
       d[i + 3] = 255;
     }
     x.putImageData(id, 0, 0);
-    if (kind === 'ca') drawRim(x, c, R);
+    if (kind !== 'wl') drawRim(x, c, R, kind);
     return cv;
   }
 
@@ -90,13 +95,20 @@
     x.globalCompositeOperation = 'saturation'; x.fillStyle = '#808080'; x.fillRect(0, 0, size, size);
     if (kind === 'ca') {
       // Kontrast anheben (v² · 4): Netzwerk und Plages treten hervor, Hintergrund bleibt dunkel
+      liftLimb(x, c, R, size, 0.25);
       x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
       x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0); x.drawImage(cv, 0, 0);
       x.globalCompositeOperation = 'multiply'; x.fillStyle = '#cfa8ff'; x.fillRect(0, 0, size, size);
       x.globalCompositeOperation = 'screen'; x.fillStyle = 'rgba(62,26,125,.55)'; x.fillRect(0, 0, size, size); // Grundhelligkeit der Scheibe
     }
+    else if (kind === 'ha') {
+      liftLimb(x, c, R, size, 0.32);
+      x.globalCompositeOperation = 'multiply'; x.drawImage(cv, 0, 0);
+      x.globalCompositeOperation = 'lighter'; x.drawImage(cv, 0, 0);
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#ff7f52'; x.fillRect(0, 0, size, size);
+    }
     else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
-    if (kind !== 'ca') {
+    if (kind === 'wl') {
       const g = x.createRadialGradient(c, c, 0, c, c, R);
       for (let i = 0; i <= 12; i++) { const r = i / 12, mu = Math.sqrt(Math.max(0, 1 - r * r)), ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2, v = Math.round(255 * ld); g.addColorStop(r, `rgb(${v},${v},${v})`); }
       x.globalCompositeOperation = 'multiply'; x.fillStyle = g; x.fillRect(0, 0, size, size);
@@ -104,15 +116,23 @@
     x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, 7); x.fill();
     x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
     x.globalCompositeOperation = 'source-over';
-    if (kind === 'ca') drawRim(x, c, R);
+    if (kind !== 'wl') drawRim(x, c, R, kind);
     return cv;
   }
 
+  /** Randverdunkelung ohne Pixelzugriff grob ausgleichen: Rand per „Screen“ aufhellen. */
+  function liftLimb(x, c, R, size, amount) {
+    const g = x.createRadialGradient(c, c, R * 0.55, c, c, R);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.7, `rgba(255,255,255,${amount * 0.45})`); g.addColorStop(1, `rgba(255,255,255,${amount})`);
+    x.globalCompositeOperation = 'screen'; x.fillStyle = g; x.beginPath(); x.arc(c, c, R, 0, 7); x.fill();
+  }
+
   /** Leuchtender Saum am Sonnenrand (Kalzium), damit die Scheibe klar vom Hintergrund abgesetzt ist. */
-  function drawRim(x, c, R) {
+  function drawRim(x, c, R, kind = 'ca') {
     x.save();
     const g = x.createRadialGradient(c, c, R * 0.985, c, c, R * 1.06);
-    g.addColorStop(0, 'rgba(205,170,255,.75)'); g.addColorStop(0.25, 'rgba(170,120,255,.35)'); g.addColorStop(1, 'rgba(120,70,220,0)');
+    if (kind === 'ha') { g.addColorStop(0, 'rgba(255,140,90,.7)'); g.addColorStop(0.25, 'rgba(230,70,35,.35)'); g.addColorStop(1, 'rgba(180,30,10,0)'); }
+    else { g.addColorStop(0, 'rgba(205,170,255,.75)'); g.addColorStop(0.25, 'rgba(170,120,255,.35)'); g.addColorStop(1, 'rgba(120,70,220,0)'); }
     x.globalCompositeOperation = 'lighter'; x.fillStyle = g;
     x.beginPath(); x.arc(c, c, R * 1.06, 0, 7); x.arc(c, c, R * 0.985, 0, 7, true); x.fill();
     x.restore();

@@ -60,17 +60,17 @@ test('McIntosh-Dekodierung', () => {
   assert.strictEqual(M.riskOf('Axx', 'A').level, 'ok');
 });
 
-test('Regionen aus dem lokalen Speicher, gedreht auf Aufnahmezeit', () => {
+test('Regionen aus dem lokalen Speicher, gedreht auf Aufnahmezeit', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'solux-test-'));
   const store = new DataStore(dir);
   store.save('regions.json', {
     '2026-11-13|4566': { observed_date: '2026-11-13', region: 4566, latitude: -8, carrington_longitude: 154, spot_class: 'Dsi', mag_class: 'B', area: 50, number_spots: 6, location: 'S08W80' },
     '2026-11-14|4566': { observed_date: '2026-11-14', region: 4566, latitude: -8, carrington_longitude: 155, spot_class: null, mag_class: null, location: 'S08W94' },
   });
-  const r = store.regionsFor(new Date('2026-11-14T00:00:00Z'));
+  const r = await store.regionsFor(new Date('2026-11-14T00:00:00Z'));
   assert.strictEqual(r.day, '2026-11-13');
   assert.strictEqual(r.regions[0].location, 'S08W80');
-  const later = store.regionsFor(new Date('2026-11-14T12:00:00Z'));
+  const later = await store.regionsFor(new Date('2026-11-14T12:00:00Z'));
   assert.ok(later.regions[0].x > r.regions[0].x, 'Region wandert nach Westen');
 });
 
@@ -91,4 +91,49 @@ test('Updater: Versionsvergleich und App-Pfad', () => {
 test('Einstellungen werden tief zusammengeführt', () => {
   const m = merge({ a: { b: 1, c: 2 }, l: [1] }, { a: { c: 3 }, l: [2, 3] });
   assert.deepStrictEqual(m, { a: { b: 1, c: 3 }, l: [2, 3] });
+});
+
+const F = require('../src/shared/filedate');
+const SWX = require('../src/shared/spaceweather');
+
+test('Datum aus Dateinamen', () => {
+  const now = new Date('2026-11-14T12:00:00');
+  const a = F.parseNameDate('Sonne_Kalzium_28.12.jpeg', now);
+  assert.deepStrictEqual([a.y, a.m, a.d, a.yearGuessed, a.time], [2025, 12, 28, true, null]);
+  const b = F.parseNameDate('2026-04-23-1042_3-U-L-Sun.tif', now);
+  assert.deepStrictEqual([b.y, b.m, b.d, b.time.hh, b.time.mm, b.time.utc], [2026, 4, 23, 10, 42, true]);
+  const c = F.parseNameDate('WL 23.04.2024 10.42 Uhr.jpg', now);
+  assert.deepStrictEqual([c.y, c.time.hh, c.time.mm, c.yearGuessed], [2024, 10, 42, false]);
+  assert.strictEqual(F.parseNameDate('Fleckengruppe4.jpeg', now), null);
+});
+
+test('NOAA-Archivbericht wird gelesen', () => {
+  const txt = `:Issued: 2026 Apr 23 0030 UTC
+I.  Regions with Sunspots.  Locations Valid at 22/2400Z
+Nmbr Location  Lo  Area  Z   LL   NN Mag Type
+4420 N16E38   225  0180 Dai  10   15 Beta-Gamma
+IA. H-alpha Plages without Spots.  Locations Valid at 22/2400Z Apr
+Nmbr  Location  Lo
+4415  S06W89   163
+II. Regions Due to Return 23 Apr to 25 Apr`;
+  const rows = SWX.parseSRS(txt, '2026-04-23');
+  assert.strictEqual(rows.length, 2);
+  assert.deepStrictEqual([rows[0].region, rows[0].spot_class, rows[0].mag_class, rows[0].latitude, rows[0].carrington_longitude, rows[0].observed_date], [4420, 'Dai', 'BG', 16, 225, '2026-04-22']);
+  assert.strictEqual(SWX.srsArchiveUrl('2026-04-23').endsWith('/2026/04/20260423SRS.txt'), true);
+});
+
+test('Push-Regeln: Stufen und einmal täglich', () => {
+  const now = Date.parse('2026-11-14T12:00:00Z');
+  const news = { items: [
+    { kind: 'flare', title: 'M6.1-Flare', detail: 'x', level: 'warn', time: now - 600000 },
+    { kind: 'flare', title: 'M1.2-Flare', detail: 'x', level: 'warn', time: now - 600000 },
+    { kind: 'region', title: 'Neue Region AR 4579', detail: 'x', level: 'ok', time: now - 3600000 },
+    { kind: 'kp', title: 'Magnetfeld ruhig', detail: 'x', level: 'ok', time: now } ] };
+  const regions = [{ region: 4566, type: 'spots', x: 0.2, y: 0, spotClass: 'Ekc', magClass: 'BGD', area: 520, probs: { m: 50, x: 15 }, location: 'S08W12' }];
+  const i = SWX.pushMessages(news, regions, 'interessant', now).map((m) => m.key.split('|')[0] + ':' + m.title);
+  assert.deepStrictEqual(i, ['flare:Solux · M6.1-Flare', 'region:Solux · AR 4566 lohnt sich']);
+  const a = SWX.pushMessages(news, regions, 'alle', now);
+  assert.strictEqual(a.length, 4);
+  assert.strictEqual(SWX.pushMessages(news, regions, 'aus', now).length, 0);
+  assert.ok(a.find((m) => m.title.includes('AR 4566')).key.endsWith('2026-11-14'));
 });

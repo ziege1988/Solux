@@ -8,7 +8,9 @@ beschriftet und mit Legende und Textdatei gespeichert.
 ## Funktionen
 
 **Reiter Sonne (Widget)**
-- Aktuelles SDO-Bild, umschaltbar zwischen **Weißlicht** (HMI-Kontinuum) und **Kalzium** (AIA 1700 Å)
+- Aktuelles Sonnenbild, umschaltbar zwischen **Weißlicht** (SDO/HMI, Hauptansicht), **Kalzium** (SDO/AIA 1700 Å)
+  und **H-Alpha** (NSO/GONG)
+- **Flares** der letzten 24 h als Markierung im Bild (antippen für Details), Flares je Region im Erklärungsfenster
 - Fleckengruppen mit NOAA-Nummer, McIntosh- und Mt.-Wilson-Klasse; Klick öffnet die Erklärung mit
   Flare-Potenzial und Flächenverlauf
 - P, B₀, L₀ und Carrington-Rotation
@@ -21,8 +23,10 @@ beschriftet und mit Legende und Textdatei gespeichert.
 
 **Aufnahmen**
 - JPEG, TIFF (auch 16 Bit) oder PNG per Drag & Drop
-- Nach dem Laden fragt Solux in einem Dialog **Datum, Uhrzeit, Wellenlänge und Bildart** ab (vorbelegt aus
-  EXIF bzw. Dateidatum), dazu optional den **Bildmaßstab** (Brennweite, Pixelgröße, Binning). Mit
+- Nach dem Laden fragt Solux in einem Dialog **Datum, Uhrzeit, Wellenlänge und Bildart** ab. Das Datum wird
+  aus dem **Dateinamen** gelesen (z. B. `Sonne_23.04.2024_1042.jpg`, `2024-04-23-1042_…` von FireCapture);
+  EXIF wird nicht verwendet, da es nach Stacking/Bearbeitung nicht die Aufnahmezeit enthält. Fehlt das Jahr,
+  nimmt Solux das letzte passende an und weist darauf hin. „Uhrzeit unbekannt“ setzt 12:00 Ortszeit an, dazu optional den **Bildmaßstab** (Brennweite, Pixelgröße, Binning). Mit
   **Starten** oder **Abbrechen** geht es weiter.
 - Drei Bildarten, automatisch erkannt oder fest gewählt:
   - **Ganze Sonne:** Abgleich über die ganze Scheibe
@@ -61,29 +65,35 @@ Lokal testen: `node scripts/build-web.js`, dann `dist-web/` mit einem beliebigen
 
 ## Push-Mitteilungen
 
-**Mac:** Solux meldet sich direkt über die macOS-Mitteilungen, solange die App läuft (sie läuft im
-Hintergrund). Auslöser einstellbar unter Zahnrad → Hinweise: M-/X-Flares, Polarlicht-Chance, brisante
-NOAA-Warnungen, neue Regionen, gutes Beobachtungsfenster.
+Drei Stufen, am Mac unter Zahnrad → Hinweise, am iPhone unter Zahnrad → Mitteilungen:
 
-**iPhone:** Der Workflow `.github/workflows/push.yml` prüft alle 15 Minuten die NOAA-Daten und sendet bei
-brisanten Ereignissen eine Web-Push-Mitteilung an Solux mobil:
-- X-Flares und M-Flares ab M5
-- Polarlicht-Chance am Standort
-- starke geomagnetische Stürme
-- Protonenereignisse
+- **Nur interessante Meldungen** (Standard):
+  - X-Flares und M-Flares ab M5
+  - besonders aktive oder große Fleckengruppen im Blickfeld (δ-Magnetfeld, über 300 MH, große E/F-Gruppen, M-Flare-Chance ab 40 % oder X-Flare-Chance ab 10 %)
+  - Polarlicht-Chance am Standort
+  - starke Stürme und Protonenereignisse
+- **Alle neuen Meldungen:** zusätzlich jeder M-Flare, neue Regionen und geomagnetische Stürme
+- **Aus**
 
-Bereits gemeldete Ereignisse merkt sich der Workflow, damit nichts doppelt kommt.
+Regeln:
+- Mitteilungen kommen nur, solange die **Sonne am Standort über dem Horizont** steht.
+- Jede Region bzw. Meldung kommt **höchstens einmal am Tag**. Neue Ereignisse, z. B. ein weiterer Flare, werden einzeln gemeldet.
+
+**Mac:** Solux meldet sich direkt, solange die App läuft.
+
+**iPhone:** Der Workflow `.github/workflows/push.yml` prüft alle 15 Minuten und sendet Web-Push. Die Mitteilung kommt
+auch, wenn Solux mobil geschlossen ist, denn die App muss dafür nicht laufen.
 
 Einrichtung (einmalig):
-1. GitHub → Settings → Secrets and variables → Actions → **New repository secret**
-   `VAPID_PRIVATE_KEY` = privater Push-Schlüssel (siehe Nachricht im Chat; der öffentliche liegt in
-   `web/push-config.js`).
-2. Solux mobil vom Home-Bildschirm öffnen → Zahnrad → **Mitteilungen** → **Mitteilungen aktivieren** →
-   erlauben → **Code kopieren**.
-3. Zweites Secret `PUSH_SUBSCRIPTIONS` anlegen und den kopierten Code einfügen. Bei mehreren Geräten die
-   Codes als Liste `[ {…}, {…} ]` eintragen.
-4. Optional: unter **Variables** `PUSH_LAT` = Breitengrad deines Standorts (Standard 50.28).
-5. Test: Actions → „Solux Push“ → **Run workflow** (Testmitteilung ist vorausgewählt).
+1. Secret `VAPID_PRIVATE_KEY` anlegen (GitHub → Settings → Secrets and variables → Actions).
+2. Solux mobil vom Home-Bildschirm öffnen → Zahnrad → Mitteilungen → Stufe wählen → **Mitteilungen aktivieren** →
+   **Code kopieren**.
+3. Secret `PUSH_SUBSCRIPTIONS` anlegen bzw. ersetzen und den Code einfügen. Nach einem Wechsel der Stufe den Code erneut
+   kopieren und den alten Wert ersetzen. „Aus“ wirkt sofort, ohne GitHub.
+4. Optional unter **Variables**: `PUSH_LAT` und `PUSH_LON` (Standort für Sonnenstand und Polarlicht, Standard
+   50.28 / 9.80) sowie `PUSH_MODE=aus` zum Pausieren aller Geräte.
+5. Test: GitHub → Reiter **Actions** → links **„Solux Push“** → rechts **„Run workflow“** → grüner Knopf
+   **Run workflow**. Die Testmitteilung kommt nach etwa einer Minute.
 
 Hinweis: GitHub startet zeitgesteuerte Workflows mit einigen Minuten Verzögerung und pausiert sie, wenn
 das Repository 60 Tage lang nicht verändert wurde (dann einmal manuell starten).
@@ -94,6 +104,9 @@ das Repository 60 Tage lang nicht verändert wurde (dann einmal manuell starten)
 |---|---|---|
 | Sonnenbilder | NASA SDO über [Helioviewer.org](https://helioviewer.org) | jeder Zeitpunkt seit 2010 online abrufbar, nur Zwischenspeicher |
 | Regionen, Klassen, Flare-Wahrscheinlichkeiten | NOAA SWPC `solar_regions.json` | online ca. 30 Tage, **lokal 60 Tage gesammelt** |
+| Regionen älterer Tage | NOAA/NCEI-Archiv der Tagesberichte (SRS) | jeder Tag seit 1996, bei Bedarf geladen |
+| Flares mit Region und Ort | NOAA SWPC `edited_events.json` | ca. 30 Tage, lokal 60 Tage |
+| H-Alpha-Bild | NSO/GONG über Helioviewer | jeder Zeitpunkt |
 | Flares (GOES), Kp, Warnungen | NOAA SWPC | online 3 bis 7 Tage, **lokal 60 Tage gesammelt** |
 | Wetter, Wind, Wolken, Höhenwind | [Open-Meteo](https://open-meteo.com) | nicht gespeichert |
 

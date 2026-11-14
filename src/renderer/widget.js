@@ -12,7 +12,7 @@
   /* ---------------- Start ---------------- */
   async function init() {
     state.cfg = await api.getConfig();
-    state.kind = state.cfg.widget.kind || 'wl';
+    state.kind = 'wl'; // Weißlicht ist immer die Hauptansicht beim Start
     setKindButtons();
     tick(); setInterval(tick, 1000);
     drawAltitude(); setInterval(drawAltitude, 60000);
@@ -42,7 +42,8 @@
   function setKindButtons() {
     document.querySelectorAll('#kindSeg button').forEach((b) => b.classList.toggle('on', b.dataset.k === state.kind));
     document.body.classList.toggle('kind-ca', state.kind === 'ca');
-    $('#arHead').textContent = state.kind === 'ca' ? 'Regionen & Plages' : 'Fleckengruppen';
+    document.body.classList.toggle('kind-ha', state.kind === 'ha');
+    $('#arHead').textContent = state.kind !== 'wl' ? 'Regionen & Plages' : 'Fleckengruppen';
   }
   $('#kindSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b || b.dataset.k === state.kind) return;
@@ -78,6 +79,7 @@
     const when = state.sun ? new Date(state.sun.date) : new Date();
     const r = await api.regions(when.toISOString());
     state.regions = r.regions || [];
+    try { state.flares = (await api.flares(Date.now() - 7 * 86400000)) || []; } catch { state.flares = []; }
     drawSunCanvas();
     renderRegionList();
     const o = A.solarOrientation(when);
@@ -93,10 +95,10 @@
     state.labelHits = [];
     x.font = `500 ${Math.round(W * 0.03)}px ${getComputedStyle(document.body).getPropertyValue('--f-mono')}`;
     x.textBaseline = 'middle';
-    const accent = state.kind === 'ca' ? '#d9c2ff' : '#f3b544';
+    const accent = state.kind === 'ca' ? '#d9c2ff' : state.kind === 'ha' ? '#ffb08a' : '#f3b544';
     const placed = [];
     for (const r of state.regions) {
-      if (r.type !== 'spots' && state.kind !== 'ca') continue;
+      if (r.type !== 'spots' && state.kind === 'wl') continue;
       const px = c + r.x * R, py = c - r.y * R;
       // Beschriftung nach außen versetzt, Überlappungen vermeiden
       const ang = Math.atan2(r.y || 0.001, r.x || 0.001);
@@ -117,17 +119,60 @@
       x.globalAlpha = 1;
       state.labelHits.push({ region: r.region, x0: Math.min(tx, px) - 6, x1: Math.max(tx + tw, px) + 6, y0: Math.min(ly, py) - 10, y1: Math.max(ly, py) + 10 });
     }
+      drawFlares(x, W, c, R);
   }
+
+  /** Position eines Flares zum Bildzeitpunkt (Region bevorzugt, sonst gemeldeter Ort + Rotation). */
+  function flarePos(f, when) {
+    const reg = f.region && state.regions.find((r) => r.region === f.region);
+    if (reg) return { x: reg.x, y: reg.y };
+    const m = /^([NS])(\d+)([EW])(\d+)$/.exec(f.location || '');
+    if (!m) return null;
+    const lat = (m[1] === 'N' ? 1 : -1) * +m[2], cmd = (m[3] === 'W' ? 1 : -1) * +m[4] + 13.2 * ((when - f.max) / 86400000);
+    const p = A.heliographicToDisk(lat, cmd, A.solarOrientation(when).B0);
+    return p.visible ? { x: p.x, y: p.y } : null;
+  }
+  function drawFlares(x, W, c, R) {
+    const when = state.sun ? new Date(state.sun.date).getTime() : Date.now();
+    const recent = (state.flares || []).filter((f) => when - f.max < 24 * 3600000 && when - f.max > -3600000 && SW_rank(f.cls) >= 25);
+    for (const f of recent) {
+      const p = flarePos(f, when); if (!p) continue;
+      const px = c + p.x * R, py = c - p.y * R, big = f.cls[0] === 'X', mid = f.cls[0] === 'M';
+      const rr = W * (big ? 0.03 : mid ? 0.022 : 0.014);
+      x.save(); x.translate(px, py);
+      x.strokeStyle = big ? '#ff4d4d' : mid ? '#ff9a3c' : '#ffe08a'; x.lineWidth = W / 280;
+      x.beginPath(); for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, r1 = k % 2 ? rr * 0.45 : rr; x.moveTo(0, 0); x.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); } x.stroke();
+      if (big || mid) { x.font = `700 ${Math.round(W * 0.026)}px ${getComputedStyle(document.body).getPropertyValue('--f-mono')}`; x.fillStyle = x.strokeStyle; x.textBaseline = 'bottom'; x.lineWidth = 3; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText(f.cls, rr * 0.6, -rr * 0.6); x.fillText(f.cls, rr * 0.6, -rr * 0.6); }
+      x.restore();
+      state.labelHits.push({ flare: f, x0: px - rr - 4, x1: px + rr + 4, y0: py - rr - 4, y1: py + rr + 4 });
+    }
+  }
+  const SW_rank = (cls) => { const m = /^([ABCMX])(\d+(?:\.\d+)?)/.exec(cls || ''); return m ? 'ABCMX'.indexOf(m[1]) * 10 + parseFloat(m[2]) : 0; };
+
+  function showFlare(f) {
+    const t = (ms) => (ms ? new Date(ms).toISOString().slice(11, 16) + ' UTC' : '–');
+    const reg = f.region && state.regions.find((r) => r.region === f.region);
+    const strength = f.cls[0] === 'X' ? 'starker Flare (X-Klasse) – kann Kurzwellenfunk auf der Tagseite weitflächig stören, oft mit Massenauswurf' : f.cls[0] === 'M' ? 'mittlerer Flare (M-Klasse) – kurze Funkstörungen auf der Tagseite möglich' : 'kleiner Flare (C-Klasse) – für die Erde unbedeutend, im H-Alpha-Licht als kurzes Aufhellen sichtbar';
+    openPop(`<div class="hd"><div><span class="lbl">Flare · Strahlungsausbruch</span><h2>${esc(f.cls)}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
+      <div class="plain"><span class="lbl">Kurz gesagt</span><p>Ein ${esc(strength)}.</p></div>
+      <div class="kv"><span>Datum</span><span>${fmt.utcDate(f.max)}</span><span>Beginn · Maximum · Ende</span><span>${t(f.begin)} · ${t(f.max)} · ${t(f.end)}</span>
+      ${f.region ? `<span>Region</span><span>AR ${f.region}${reg ? ' · ' + esc(reg.spotClass) + ' ' + esc(M.magSymbol(reg.magClass)) : ''}</span>` : ''}
+      ${f.location ? `<span>Ort</span><span>${esc(f.location)}${f.optical ? ` · optisch ${esc(f.optical)}` : ''}</span>` : ''}</div>
+      ${reg ? `<button class="ghost" data-region="${reg.region}" style="align-self:flex-start">Zur Region AR ${reg.region}</button>` : ''}
+      <button class="ghost" data-glossary style="align-self:flex-start">Flare-Klassen erklärt</button>
+      <p class="note">Quelle: NOAA SWPC Ereignisliste (GOES-Röntgen, optische Beobachtungen).</p>`);
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-region]'); if (b) showRegion(+b.dataset.region); });
 
   $('#sunCv').addEventListener('click', (e) => {
     const cv = e.currentTarget, rect = cv.getBoundingClientRect();
     const X = ((e.clientX - rect.left) / rect.width) * cv.width, Y = ((e.clientY - rect.top) / rect.height) * cv.height;
     const hit = state.labelHits.find((h) => X >= h.x0 && X <= h.x1 && Y >= h.y0 && Y <= h.y1);
-    if (hit) showRegion(hit.region);
+    if (hit) hit.flare ? showFlare(hit.flare) : showRegion(hit.region);
   });
 
   function renderRegionList() {
-    const list = state.regions.filter((r) => r.type === 'spots' || state.kind === 'ca');
+    const list = state.regions.filter((r) => r.type === 'spots' || state.kind !== 'wl');
     if (!list.length) { $('#arList').innerHTML = `<li class="note">${state.regions.length ? 'nur fleckenfreie Plages' : 'keine nummerierten Gruppen'}</li>`; return; }
     $('#arList').innerHTML = list.map((r) => `<li><button class="arbtn ${r.type}" data-r="${r.region}" title="Erklärung zu AR ${r.region}"><b>${r.region}</b><span>${esc(r.spotClass || 'Plage')}</span><em>${esc(M.magSymbol(r.magClass) || '–')} · ${esc(r.location)}</em></button></li>`).join('');
   }
@@ -166,6 +211,7 @@
         ${r.flares.c || r.flares.m || r.flares.x ? `<span>Flares zuletzt</span><span>${r.flares.c}× C · ${r.flares.m}× M · ${r.flares.x}× X (am Meldetag)</span>` : ''}
       </div>
       ${hist.length > 1 ? `<div><span class="lbl">Entwicklung der Fläche (rot = δ-Konfiguration)</span><div style="display:flex;gap:2px;height:50px;margin-top:6px">${bars}</div><div class="note" style="display:flex;justify-content:space-between"><span>${hist[0].day.slice(5)}</span><span>${hist[hist.length - 1].day.slice(5)}</span></div></div>` : ''}
+      ${(() => { const fl = (state.flares || []).filter((f) => f.region === r.region && SW_rank(f.cls) >= 20).slice(0, 8); return fl.length ? `<div><span class="lbl">Flares der letzten 7 Tage</span><div class="flist">${fl.map((f) => `<span class="fl ${f.cls[0]}">${esc(f.cls)}<small>${fmt.utcDate(f.max).slice(0, 6)} ${new Date(f.max).toISOString().slice(11, 16)}</small></span>`).join('')}</div></div>` : '<p class="note">Keine Flares ab C2 in den letzten 7 Tagen.</p>'; })()}
       <button class="ghost" data-glossary style="align-self:flex-start">Alle Kürzel erklärt</button>
       <p class="note">Daten: NOAA SWPC. MH = millionstel Sonnenhälfte (eine Erdscheibe ≈ 42 MH).</p>`);
   }
@@ -344,15 +390,17 @@
       <div class="field"><label for="ls">Beschriftung</label><select id="ls" data-p="recordings.labelStyle"><option value="full" ${c.recordings.labelStyle === 'full' ? 'selected' : ''}>AR + McIntosh</option><option value="short" ${c.recordings.labelStyle === 'short' ? 'selected' : ''}>nur AR-Nummer</option></select></div></div>
       <label class="chk"><input type="checkbox" data-p="recordings.legend" ${c.recordings.legend ? 'checked' : ''}> Legende standardmäßig anhängen</label>
       <label class="chk"><input type="checkbox" data-p="recordings.grid" ${c.recordings.grid ? 'checked' : ''}> Heliografisches Gradnetz einzeichnen</label>
-      <div class="field"><label for="ct">Uhrzeit der Kamera (EXIF)</label><select id="ct" data-p="recordings.cameraTime"><option value="local" ${c.recordings.cameraTime === 'local' ? 'selected' : ''}>Ortszeit (MEZ/MESZ)</option><option value="utc" ${c.recordings.cameraTime === 'utc' ? 'selected' : ''}>UTC</option></select></div>
+      <p class="note">Das Aufnahmedatum liest Solux aus dem Dateinamen (z. B. „Sonne_23.04.2024_1042.jpg“) und fragt es vor jeder Auswertung ab. EXIF-Daten werden nicht verwendet, da sie nach der Bearbeitung nicht mehr die Aufnahmezeit enthalten.</p>
       <span class="lbl">Setup-Profile</span>
       ${['wl', 'ca'].map((m) => { const p = c.profiles[m]; return `<div class="box"><b>${esc(p.name)}</b><br><span class="note">Spiegelung: ${p.flip == null ? 'noch unbekannt' : p.flip ? 'gespiegelt' : 'nicht gespiegelt'} · ${p.history.length} Ausrichtungen gespeichert</span><br><button class="ghost" data-reset="${m}" style="margin-top:6px">Profil zurücksetzen</button></div>`; }).join('')}`,
-    hinw: (c) => `<h3>Hinweise (Mitteilungen)</h3>
-      <label class="chk"><input type="checkbox" data-p="notify.flareM" ${c.notify.flareM ? 'checked' : ''}> Flares ab Klasse M</label>
-      <label class="chk"><input type="checkbox" data-p="notify.aurora" ${c.notify.aurora ? 'checked' : ''}> Polarlicht-Chance am Standort</label>
-      <label class="chk"><input type="checkbox" data-p="notify.alerts" ${c.notify.alerts !== false ? 'checked' : ''}> Brisante NOAA-Warnungen (starke Stürme, Protonen, Röntgen > M5)</label>
-      <label class="chk"><input type="checkbox" data-p="notify.newRegion" ${c.notify.newRegion ? 'checked' : ''}> Neue aktive Regionen</label>
-      <label class="chk"><input type="checkbox" data-p="notify.goodWindow" ${c.notify.goodWindow ? 'checked' : ''}> Gutes Beobachtungsfenster (klar, ruhig, windstill)</label>`,
+    hinw: (c) => `<h3>Mitteilungen</h3>
+      <div class="field"><label for="nm">Mitteilungen am Mac</label><select id="nm" data-p="notify.mode">
+        <option value="interessant" ${(c.notify.mode || 'interessant') === 'interessant' ? 'selected' : ''}>Nur interessante Meldungen</option>
+        <option value="alle" ${c.notify.mode === 'alle' ? 'selected' : ''}>Alle neuen Meldungen</option>
+        <option value="aus" ${c.notify.mode === 'aus' ? 'selected' : ''}>Aus</option></select></div>
+      <div class="box"><b>Interessant</b> = X-Flares und M-Flares ab M5, besonders aktive oder große Fleckengruppen im Blickfeld (δ-Magnetfeld, über 300 MH, hohe Flare-Chance), Polarlicht-Chance am Standort, starke Stürme und Protonenereignisse.<br><b>Alle</b> = zusätzlich jeder M-Flare, neue Regionen und geomagnetische Stürme.</div>
+      <p class="note">Mitteilungen kommen nur, solange die Sonne an deinem Standort über dem Horizont steht, und jede Region bzw. Meldung höchstens einmal am Tag – außer es passiert etwas Neues (z. B. ein weiterer Flare).</p>
+      <label class="chk"><input type="checkbox" data-p="notify.goodWindow" ${c.notify.goodWindow ? 'checked' : ''}> Zusätzlich: gutes Beobachtungsfenster (klar, ruhig, windstill)</label>`,
     upd: (c) => `<h3>Updates</h3>
       <div class="box" style="display:flex;flex-direction:column;gap:8px"><span>Installiert: <b>Solux ${esc(c.version)}</b>${c.packaged ? '' : ' (Entwicklungsmodus)'}</span>
       <label class="chk"><input type="checkbox" data-p="update.auto" ${c.update.auto ? 'checked' : ''}> Automatisch nach Updates suchen</label>
@@ -361,14 +409,17 @@
   };
 
   SECTIONS.push = () => `<h3>Push-Mitteilungen</h3>
-      <p>Solux meldet sich auf diesem iPhone, wenn auf der Sonne etwas Brisantes passiert: X-Flares und starke M-Flares (ab M5), Polarlicht-Chance an deinem Standort, starke geomagnetische Stürme, Protonenereignisse.</p>
+      <p>Solux meldet sich auf diesem iPhone – auch wenn die App geschlossen ist. Gemeldet wird nur, solange die Sonne an deinem Standort über dem Horizont steht, und jede Region bzw. Meldung höchstens einmal am Tag.</p>
+      <div class="field"><label for="pmode">Was soll gemeldet werden?</label><select id="pmode" class="inp">
+        <option value="interessant">Nur interessante Meldungen</option><option value="alle">Alle neuen Meldungen</option><option value="aus">Aus</option></select></div>
       <div class="box" id="pushBox">Prüfe …</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="pbtn" id="pushOn">Mitteilungen aktivieren</button><button class="ghost" id="pushTest">Test auf diesem Gerät</button></div>
       <div id="pushSub" hidden>
-        <p class="note">Letzter Schritt (einmalig): Diesen Code als GitHub-Secret <b>PUSH_SUBSCRIPTIONS</b> speichern. Anleitung siehe README.</p>
+        <p class="note" id="pushHint">Diesen Code einmalig als GitHub-Secret <b>PUSH_SUBSCRIPTIONS</b> speichern (bestehenden Wert ersetzen).</p>
         <textarea id="pushJson" class="inp" rows="5" readonly style="width:100%;font:11px var(--f-mono)"></textarea>
         <button class="ghost" id="pushCopy">Code kopieren</button>
-      </div>`;
+      </div>
+      <p class="note"><b>Interessant:</b> X-Flares, M-Flares ab M5, besonders aktive/große Fleckengruppen im Blickfeld, Polarlicht-Chance, starke Stürme. <b>Alle:</b> zusätzlich jeder M-Flare, neue Regionen, geomagnetische Stürme.</p>`;
 
   async function openSettings(sec) {
     state.cfg = await api.getConfig();
@@ -414,14 +465,18 @@
     if (sec === 'push' && api.push) {
       const show = async () => {
         const st2 = await api.push.status();
+        $('#pmode').value = st2.mode;
         $('#pushBox').innerHTML = st2.message;
         $('#pushOn').hidden = !st2.canSubscribe;
-        if (st2.subscription) { $('#pushSub').hidden = false; $('#pushJson').value = st2.subscription; }
+        $('#pushSub').hidden = !st2.code;
+        if (st2.code) $('#pushJson').value = st2.code;
+        if (st2.codeChanged) $('#pushHint').innerHTML = '<b class="lv-warn">Stufe geändert:</b> Code kopieren und bei GitHub im Secret <b>PUSH_SUBSCRIPTIONS</b> den alten Wert ersetzen.';
       };
       show();
+      $('#pmode').addEventListener('change', async (e) => { try { await api.push.setMode(e.target.value); } catch (err) { $('#pushBox').textContent = err.message; } show(); });
       $('#pushOn').addEventListener('click', async (e) => { e.target.disabled = true; try { await api.push.subscribe(); } catch (err) { $('#pushBox').textContent = err.message; } e.target.disabled = false; show(); });
       $('#pushTest').addEventListener('click', () => api.push.test().catch((err) => ($('#pushBox').textContent = err.message)));
-      $('#pushCopy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText($('#pushJson').value); e.target.textContent = 'Kopiert ✓'; } catch { $('#pushJson').select(); } });
+      $('#pushCopy').addEventListener('click', async (e) => { try { await navigator.clipboard.writeText($('#pushJson').value); api.push.markCopied($('#pushJson').value); e.target.textContent = 'Kopiert ✓'; } catch { $('#pushJson').select(); } });
     }
     if (sec === 'aufn') body.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', async () => { await api.rec.profileReset(b.dataset.reset); openSettings('aufn'); }));
     if (sec === 'upd') {

@@ -14,6 +14,7 @@
   const SOURCES = {
     wl: { id: 18, layer: '[SDO,HMI,continuum,1,100]', label: 'SDO/HMI Kontinuum' },
     ca: { id: 16, layer: '[SDO,AIA,1700,1,100]', label: 'SDO/AIA 1700 Å' },
+    ha: { id: 94, layer: '[GONG,GONG,H-alpha,6562,1,100]', label: 'GONG H-Alpha (NSO)' },
   };
   const IMG_SIZE = 1024, DISC_FRACTION = 0.45; // Sonnenradius = 0,45 · Bildbreite
   const SWPC_URLS = {
@@ -23,7 +24,71 @@
     alerts: `${SWPC}/products/alerts.json`,
     ssn: `${SWPC}/json/solar-cycle/swpc_observed_ssn.json`,
     flux: `${SWPC}/products/summary/10cm-flux.json`,
+    events: `${SWPC}/json/edited_events.json`,
   };
+  const SRS_ARCHIVE = 'https://www.ngdc.noaa.gov/stp/space-weather/swpc-products/daily_reports/solar_region_summaries';
+
+  /* ---------------- NOAA-Archiv (ältere Tage) ---------------- */
+  /** URL des Regionsberichts, der am Tag `issue` (UTC) erschienen ist. */
+  function srsArchiveUrl(issue) {
+    const d = new Date(issue), y = d.getUTCFullYear(), m = String(d.getUTCMonth() + 1).padStart(2, '0'), day = String(d.getUTCDate()).padStart(2, '0');
+    return `${SRS_ARCHIVE}/${y}/${m}/${y}${m}${day}SRS.txt`;
+  }
+  /** Ausgabetage, deren Berichte für einen Zeitpunkt gebraucht werden (gültig 00 UT des Ausgabetags). */
+  function srsIssueDays(date) {
+    const t = new Date(date), d0 = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()));
+    return [d0, new Date(d0.getTime() + 86400000)].map((d) => d.toISOString().slice(0, 10));
+  }
+  const MAGMAP = { alpha: 'A', beta: 'B', gamma: 'G', delta: 'D' };
+  /** SRS-Textbericht -> Zeilen im Format von solar_regions.json. */
+  function parseSRS(text, issueDay) {
+    const lines = String(text).split(/\r?\n/);
+    const observed = new Date(new Date(issueDay + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10);
+    const rows = []; let sec = '';
+    for (const l of lines) {
+      if (/^I\.\s+Regions with Sunspots/i.test(l)) { sec = 'I'; continue; }
+      if (/^IA\.\s+H-alpha Plages/i.test(l)) { sec = 'IA'; continue; }
+      if (/^II\.\s/.test(l)) { sec = ''; continue; }
+      const loc = (x) => { const m = /^([NS])(\d{2})([EW])(\d{2})$/.exec(x); return m ? { lat: (m[1] === 'N' ? 1 : -1) * +m[2], lon: (m[3] === 'E' ? 1 : -1) * +m[4] } : null; };
+      let m;
+      if (sec === 'I' && (m = /^(\d{4,5})\s+([NS]\d{2}[EW]\d{2})\s+(\d{3})\s+(\d{4})\s+([A-Z][a-z]{2})\s+(\d+)\s+(\d+)\s+([A-Za-z-]+)/.exec(l))) {
+        const p = loc(m[2]); if (!p) continue;
+        rows.push({ observed_date: observed, region: +m[1], latitude: p.lat, longitude: p.lon, location: m[2], carrington_longitude: +m[3], area: +m[4], spot_class: m[5], extent: +m[6], number_spots: +m[7],
+          mag_class: m[8].toLowerCase().split('-').map((x) => MAGMAP[x] || '').join(''), status: null, first_date: null, source: 'archiv' });
+      } else if (sec === 'IA' && (m = /^(\d{4,5})\s+([NS]\d{2}[EW]\d{2})\s+(\d{3})/.exec(l))) {
+        const p = loc(m[2]); if (!p) continue;
+        rows.push({ observed_date: observed, region: +m[1], latitude: p.lat, longitude: p.lon, location: m[2], carrington_longitude: +m[3], area: 0, spot_class: '', number_spots: 0, mag_class: '', status: null, source: 'archiv' });
+      }
+    }
+    return rows;
+  }
+
+  /* ---------------- Flares mit Region und Ort ---------------- */
+  /** Ereignisliste (edited_events.json) -> Flares mit Klasse, Region und Ort (aus optischer Beobachtung). */
+  function flareEvents(events) {
+    const z = (t) => (t ? new Date(t + (t.endsWith('Z') ? '' : 'Z')).getTime() : null);
+    const xra = (events || []).filter((e) => e.type === 'XRA' && e.particulars1);
+    const fla = (events || []).filter((e) => e.type === 'FLA' && e.location);
+    return xra.map((e) => {
+      const t = z(e.max_datetime) || z(e.begin_datetime);
+      const opt = fla.filter((f) => (e.region ? f.region === e.region : true) && Math.abs((z(f.max_datetime) || z(f.begin_datetime)) - t) < 40 * 60000)
+        .sort((a, b) => Math.abs(z(a.begin_datetime) - t) - Math.abs(z(b.begin_datetime) - t))[0];
+      return { cls: e.particulars1.trim(), begin: z(e.begin_datetime), max: t, end: z(e.end_datetime), region: e.region || (opt && opt.region) || null, location: opt ? opt.location : null, optical: opt ? opt.particulars1 : null };
+    }).sort((a, b) => b.max - a.max);
+  }
+  const flareRank = (cls) => { const m = /^([ABCMX])(\d+(?:\.\d+)?)/.exec(cls || ''); return m ? 'ABCMX'.indexOf(m[1]) * 10 + parseFloat(m[2]) : 0; };
+
+  /* ---------------- Interessante Regionen ---------------- */
+  function interestingReason(r) {
+    const mag = String(r.magClass || '').toUpperCase(), z = r.spotClass ? r.spotClass[0] : '', p = r.spotClass ? r.spotClass[1] : '', c = r.spotClass ? r.spotClass[2] : '';
+    const why = [];
+    if (mag.includes('D')) why.push('δ-Magnetfeld');
+    if ((r.area || 0) >= 300) why.push(`groß (${r.area} MH)`);
+    if ('EF'.includes(z) && z && ('hk'.includes(p) || c === 'c')) why.push(`ausgedehnte Gruppe ${r.spotClass}`);
+    if ((r.probs && r.probs.x) >= 10) why.push(`X-Flare-Chance ${r.probs.x} %`);
+    else if ((r.probs && r.probs.m) >= 40) why.push(`M-Flare-Chance ${r.probs.m} %`);
+    return why;
+  }
 
   /* ---------------- Sonnenbild (Helioviewer) ---------------- */
   function closestImageUrl(kind, date) {
@@ -132,17 +197,19 @@
   function buildNews(d, loc, nowMs = Date.now()) {
     const items = [], now = nowMs;
     const flares = d.flares || [];
+    const evf = flareEvents(d.events);
+    const origin = (f) => { const t = new Date(f.max_time || f.begin_time).getTime(); const e = evf.find((x) => x.cls === (f.max_class || '').trim() && Math.abs(x.max - t) < 8 * 60000) || evf.find((x) => Math.abs(x.max - t) < 4 * 60000); return e && e.region ? ` · aus AR ${e.region}${e.location ? ' (' + e.location + ')' : ''}` : ''; };
     for (const f of flares) {
       const t = new Date(f.max_time || f.begin_time).getTime(), cls = f.max_class || '';
       if (now - t > 72 * 3600000) continue;
       if (cls[0] === 'X' || cls[0] === 'M') {
         const r = cls[0] === 'X' ? (parseFloat(cls.slice(1)) >= 10 ? 'R4' : 'R3') : (parseFloat(cls.slice(1)) >= 5 ? 'R2' : 'R1');
-        items.push({ level: cls[0] === 'X' ? 'bad' : 'warn', title: `${cls}-Flare`, detail: `Maximum ${fmtUTC(t)} · Funkausfall ${r} auf der Tagseite`, time: t, kind: 'flare' });
+        items.push({ level: cls[0] === 'X' ? 'bad' : 'warn', title: `${cls}-Flare`, detail: `Maximum ${fmtUTC(t)}${origin(f)} · Funkausfall ${r} auf der Tagseite`, time: t, kind: 'flare', cls });
       }
     }
     if (!items.some((i) => i.kind === 'flare')) {
       const c = flares.filter((f) => now - new Date(f.max_time).getTime() < 86400000).sort((a, b) => (b.max_xrlong || 0) - (a.max_xrlong || 0))[0];
-      if (c) items.push({ level: 'ok', title: `Stärkster Flare 24 h: ${c.max_class}`, detail: `Maximum ${fmtUTC(new Date(c.max_time))}`, time: new Date(c.max_time).getTime(), kind: 'flare' });
+      if (c) items.push({ level: 'ok', title: `Stärkster Flare 24 h: ${c.max_class}`, detail: `Maximum ${fmtUTC(new Date(c.max_time))}${origin(c)}`, time: new Date(c.max_time).getTime(), kind: 'flare' });
     }
     const kp = (d.kp || []).map((k) => ({ ...k, t: new Date(k.time_tag + 'Z').getTime() }));
     const next24 = kp.filter((k) => k.t >= now - 3 * 3600000 && k.t <= now + 24 * 3600000);
@@ -195,6 +262,31 @@
     return { level, title: `${kinds[kindEn] || kindEn}: ${title}`, detail: text };
   }
 
+  /**
+   * Push-Mitteilungen bestimmen (gemeinsam für Mac und Handy).
+   * mode: 'alle' | 'interessant' | 'aus'. Schlüssel enthalten das Datum, damit jede Region/Meldung
+   * höchstens einmal pro Tag kommt – neue Ereignisse (Flares) haben eigene Schlüssel.
+   */
+  function pushMessages(news, regions, mode, nowMs = Date.now()) {
+    if (mode === 'aus') return [];
+    const day = new Date(nowMs).toISOString().slice(0, 10), out = [];
+    for (const i of news.items || []) {
+      if (nowMs - i.time > 6 * 3600000 && i.kind !== 'aurora' && i.kind !== 'kp') continue;
+      const strong = pushWorthy(i);
+      if (!strong && mode !== 'alle') continue;
+      if (mode === 'alle' && i.level === 'ok' && i.kind !== 'region') continue; // „Magnetfeld ruhig“ u. Ä. nicht melden
+      const key = i.kind === 'flare' ? `flare|${i.title}|${new Date(i.time).toISOString().slice(0, 16)}` : `${i.kind}|${i.title}|${day}`;
+      out.push({ key, title: `Solux · ${i.title}`, body: i.detail, kind: i.kind });
+    }
+    for (const r of regions || []) {
+      if (r.type !== 'spots' || Math.abs(r.x) > 0.95) continue; // nur gut sichtbare Gruppen
+      const why = interestingReason(r);
+      if (!why.length) continue;
+      out.push({ key: `region|${r.region}|${day}`, title: `Solux · AR ${r.region} lohnt sich`, body: `${why.join(', ')} – gut sichtbar bei ${r.location}.`, kind: 'region-hot' });
+    }
+    return out;
+  }
+
   /** Ist eine Meldung „brisant“ genug für eine Push-Mitteilung? */
   function pushWorthy(item) {
     if (item.kind === 'aurora') return true;
@@ -208,6 +300,6 @@
     return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
   }
 
-  const api = { pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
+  const api = { pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);

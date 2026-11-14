@@ -47,6 +47,7 @@ p { margin: 0; }
 .seg button.on { background: var(--panel); color: var(--text); }
 .seg button.on[data-k="wl"] { color: var(--sun); }
 .seg button.on[data-k="ca"] { color: var(--ca); }
+.seg button.on[data-k="ha"] { color: #ff8a5c; }
 .chip { display: inline-block; font-family: var(--f-mono); font-size: 10px; padding: 1px 7px; border-radius: 99px; border: 1px solid currentColor; }
 .lv-ok { color: var(--ok); } .lv-warn { color: var(--warn); } .lv-bad { color: var(--bad); } .lv-off { color: var(--dim); }
 ::-webkit-scrollbar { width: 8px; height: 8px; }

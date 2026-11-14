@@ -42,6 +42,8 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
           PUSH_LAT: ${{ vars.PUSH_LAT }}
+          PUSH_LON: ${{ vars.PUSH_LON }}
+          PUSH_MODE: ${{ vars.PUSH_MODE }}
           PUSH_TEST: ${{ github.event_name == 'workflow_dispatch' && inputs.test }}
         run: node scripts/push-check.js
       - name: Gemeldete Ereignisse speichern

@@ -12,7 +12,7 @@ const DEFAULTS = {
     wl: { name: 'Refraktor + Herschelkeil (Weißlicht)', flip: null, sigma: 1, history: [] },
     ca: { name: 'Refraktor + Ca-K (Kalzium)', flip: null, sigma: 1, history: [] },
   },
-  notify: { flareM: true, aurora: true, alerts: true, newRegion: false, goodWindow: true, seen: [] },
+  notify: { mode: 'interessant', goodWindow: true, seen: [] },
   update: { auto: true, repo: 'ziege1988/Solux', lastCheck: null },
 };
 

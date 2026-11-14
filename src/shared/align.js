@@ -164,8 +164,9 @@
     let d = null;
     try { d = detectDisc(g, w, h, opts); } catch (e) { return { type: 'surface', reason: e.message }; }
     if (d.inside && d.span > 300) return { type: 'full', disc: d };
-    const minSpan = opts.expectedR ? 12 : 60; // ohne Maßstab braucht der Kreis-Fit einen längeren Bogen
-    if (d.span >= minSpan && d.residual < Math.max(2.5, d.r * 0.01)) return { type: 'partial', disc: d };
+    const minSpan = opts.expectedR ? 12 : 30; // ohne Maßstab braucht der Kreis-Fit einen längeren Bogen
+    const plausible = d.r > 0.3 * Math.min(w, h) && d.r < 6 * Math.max(w, h);
+    if (d.span >= minSpan && plausible && d.residual < Math.max(2.5, d.r * 0.01)) return { type: 'partial', disc: d };
     return { type: 'surface', disc: null, reason: 'Kein eindeutiger Sonnenrand im Bild.' };
   }
 
@@ -389,8 +390,14 @@
       const X = (gx - half + 0.5) / half, Y = (gy - half + 0.5) / half, rr = Math.hypot(X, Y);
       if (rr > 0.97) continue;
       const c = val[gy * N + gx] / ringMed[Math.min(rings - 1, Math.floor(rr * rings))] - 1;
-      con[gy * N + gx] = c; if (c < thr) mask[gy * N + gx] = 1;
+      con[gy * N + gx] = Number.isNaN(c) ? 0 : c;
     }
+    // Schwelle an das Bildrauschen anpassen (stark geschärfte Bilder: Granulation nicht als Flecken zählen)
+    const samp = []; for (let i = 0; i < con.length; i += 7) if (con[i] !== 0) samp.push(Math.abs(con[i]));
+    samp.sort((a, b) => a - b);
+    const mad = samp.length ? samp[samp.length >> 1] * 1.4826 : 0;
+    const thrEff = Math.min(thr, -5 * mad);
+    for (let i = 0; i < con.length; i++) if (con[i] < thrEff) mask[i] = 1;
     // Zusammenhangskomponenten
     const seen = new Uint8Array(N * N);
     for (let i = 0; i < N * N; i++) {
@@ -431,7 +438,8 @@
       const g = extra.find((G) => Math.hypot(G.x - s.x, G.y - s.y) < 0.08);
       if (g) { g.spots.push(s); g.x = (g.x + s.x) / 2; g.y = (g.y + s.y) / 2; } else extra.push({ x: s.x, y: s.y, spots: [s] });
     }
-    return { matched: assigned, extra: extra.filter((g) => g.spots.reduce((t, s) => t + s.pixels, 0) >= 4) };
+    // Nur deutliche Gruppen als „neu?“ melden: genug Fläche und mindestens ein dunkler Kern
+    return { matched: assigned, extra: extra.filter((g) => g.spots.reduce((t, s) => t + s.pixels, 0) >= 12 && Math.min(...g.spots.map((s) => s.contrast)) <= -0.32) };
   }
 
   /* ================= Oberflächenbilder ohne Sonnenrand ================= */
