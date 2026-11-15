@@ -310,7 +310,7 @@
     return (x, t) => {
       const p = Math.min(1, t / 0.9), cx = d.cx * s, cy = d.cy * s, r = d.r * s;
       x.lineWidth = Math.max(2, r * 0.008); x.strokeStyle = 'rgba(61,187,108,.95)'; x.setLineDash([r * 0.03, r * 0.03]);
-      x.beginPath(); x.arc(cx, cy, r * (1.3 - 0.3 * p), 0, 7); x.stroke(); x.setLineDash([]);
+      x.beginPath(); x.arc(cx, cy, r * (1.3 - 0.3 * p), 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
       x.strokeStyle = 'rgba(61,187,108,.6)'; x.beginPath(); x.moveTo(cx - r * 0.05, cy); x.lineTo(cx + r * 0.05, cy); x.moveTo(cx, cy - r * 0.05); x.lineTo(cx, cy + r * 0.05); x.stroke();
     };
   }
@@ -319,9 +319,9 @@
       const cx = d.cx * s, cy = d.cy * s, r = d.r * s, a = t * 2.4;
       x.lineWidth = Math.max(2, r * 0.006);
       const g = x.createConicGradient ? x.createConicGradient(a - Math.PI / 2, cx, cy) : null;
-      if (g) { g.addColorStop(0, 'rgba(243,181,68,.0)'); g.addColorStop(0.92, 'rgba(243,181,68,.0)'); g.addColorStop(1, 'rgba(243,181,68,.28)'); x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); }
+      if (g) { g.addColorStop(0, 'rgba(243,181,68,.0)'); g.addColorStop(0.92, 'rgba(243,181,68,.0)'); g.addColorStop(1, 'rgba(243,181,68,.28)'); x.fillStyle = g; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.fill(); }
       x.strokeStyle = 'rgba(243,181,68,.95)'; x.beginPath(); x.moveTo(cx, cy); x.lineTo(cx + Math.sin(a) * r, cy - Math.cos(a) * r); x.stroke();
-      x.strokeStyle = 'rgba(243,181,68,.3)'; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.stroke();
+      x.strokeStyle = 'rgba(243,181,68,.3)'; x.beginPath(); x.arc(cx, cy, r, 0, Math.PI * 2); x.stroke();
     };
   }
   /** Bildpixel -> Sonnenkoordinaten (Radien, x West+, y Nord+) bei gegebener Ausrichtung. */
@@ -795,10 +795,10 @@
     x.save();
     // Höhenringe (gestrichelt)
     x.setLineDash([r * 0.025, r * 0.035]); x.lineWidth = lw; x.strokeStyle = rgba(accent, 0.38);
-    for (const km of [50000, 100000, 150000]) { x.beginPath(); x.arc(cx, cy, r + h(km), 0, 7); x.stroke(); }
+    for (const km of [50000, 100000, 150000]) { x.beginPath(); x.arc(cx, cy, r + h(km), 0, Math.PI * 2); x.stroke(); }
     x.setLineDash([]);
     // Kranz: Striche alle 5°, lange alle 30° (Positionswinkel von Nord über Ost)
-    x.strokeStyle = rgba(tick, 0.45); x.beginPath(); x.arc(cx, cy, R0, 0, 7); x.stroke();
+    x.strokeStyle = rgba(tick, 0.45); x.beginPath(); x.arc(cx, cy, R0, 0, Math.PI * 2); x.stroke();
     for (let pa = 0; pa < 360; pa += 5) {
       const a = (-90 - pa) * D2R, L = pa % 30 === 0 ? r * 0.028 : r * 0.012;
       x.strokeStyle = rgba(tick, pa % 30 === 0 ? 0.8 : 0.5); x.lineWidth = pa % 30 === 0 ? lw * 2 : lw;

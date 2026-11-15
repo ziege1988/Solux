@@ -9,22 +9,22 @@
   function drawHalpha(cv, text = 'SOLUX') {
     const ctx = cv.getContext('2d'), W = cv.width, c = W / 2, R = W * 0.33, rnd = rng(42);
     ctx.clearRect(0, 0, W, W);
-    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(c, c, W / 2, 0, 7); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(c, c, W / 2, 0, Math.PI * 2); ctx.fill();
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (const [a, h, wd] of [[200, 0.17, 0.09], [320, 0.12, 0.06], [35, 0.09, 0.05], [115, 0.14, 0.07], [260, 0.06, 0.04]]) {
       for (let k = 0; k < 80; k++) {
         const aa = (a + (rnd() - 0.5) * wd * 90) * D2R, hh = R * (1 + rnd() * h * (1 - Math.abs(rnd() - 0.5)));
         ctx.fillStyle = `rgba(${(200 + rnd() * 55) | 0},${(50 + rnd() * 40) | 0},20,${0.05 + rnd() * 0.07})`;
-        ctx.beginPath(); ctx.arc(c + Math.cos(aa) * hh, c + Math.sin(aa) * hh, W * 0.004 + rnd() * W * 0.012, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.arc(c + Math.cos(aa) * hh, c + Math.sin(aa) * hh, W * 0.004 + rnd() * W * 0.012, 0, Math.PI * 2); ctx.fill();
       }
     }
-    for (let i = 0; i < 900; i++) { const a = rnd() * 7, h = R * (1 + rnd() * 0.03); ctx.fillStyle = 'rgba(230,70,30,.06)'; ctx.beginPath(); ctx.arc(c + Math.cos(a) * h, c + Math.sin(a) * h, W * 0.003, 0, 7); ctx.fill(); }
+    for (let i = 0; i < 900; i++) { const a = rnd() * 7, h = R * (1 + rnd() * 0.03); ctx.fillStyle = 'rgba(230,70,30,.06)'; ctx.beginPath(); ctx.arc(c + Math.cos(a) * h, c + Math.sin(a) * h, W * 0.003, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
     const g = ctx.createRadialGradient(c, c, 0, c, c, R); g.addColorStop(0, '#c63c1f'); g.addColorStop(0.75, '#a92e16'); g.addColorStop(1, '#6e170a');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R, 0, 7); ctx.fill();
-    ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, 7); ctx.clip();
-    for (let i = 0; i < 9000; i++) { const a = rnd() * 7, rr = Math.sqrt(rnd()) * R; ctx.fillStyle = rnd() < 0.55 ? 'rgba(60,8,2,.10)' : 'rgba(255,120,70,.08)'; ctx.beginPath(); ctx.arc(c + Math.cos(a) * rr, c + Math.sin(a) * rr, W * 0.002 + rnd() * W * 0.006, 0, 7); ctx.fill(); }
-    for (const [px, py] of [[-0.4, 0.24], [0.22, -0.3], [0.6, 0.16]]) for (let k = 0; k < 60; k++) { ctx.fillStyle = 'rgba(255,170,110,.09)'; ctx.beginPath(); ctx.arc(c + (px + (rnd() - 0.5) * 0.25) * R, c - (py + (rnd() - 0.5) * 0.16) * R, W * 0.006 + rnd() * W * 0.012, 0, 7); ctx.fill(); }
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.arc(c, c, R, 0, Math.PI * 2); ctx.clip();
+    for (let i = 0; i < 9000; i++) { const a = rnd() * 7, rr = Math.sqrt(rnd()) * R; ctx.fillStyle = rnd() < 0.55 ? 'rgba(60,8,2,.10)' : 'rgba(255,120,70,.08)'; ctx.beginPath(); ctx.arc(c + Math.cos(a) * rr, c + Math.sin(a) * rr, W * 0.002 + rnd() * W * 0.006, 0, Math.PI * 2); ctx.fill(); }
+    for (const [px, py] of [[-0.4, 0.24], [0.22, -0.3], [0.6, 0.16]]) for (let k = 0; k < 60; k++) { ctx.fillStyle = 'rgba(255,170,110,.09)'; ctx.beginPath(); ctx.arc(c + (px + (rnd() - 0.5) * 0.25) * R, c - (py + (rnd() - 0.5) * 0.16) * R, W * 0.006 + rnd() * W * 0.012, 0, Math.PI * 2); ctx.fill(); }
     ctx.lineCap = 'round';
     for (let f = 0; f < 7; f++) {
       let x = c + (rnd() - 0.5) * 1.4 * R, y = c + (rnd() - 0.5) * 1.4 * R, a = rnd() * 7;
@@ -47,7 +47,7 @@
       img.onload = () => {
         const x = cv.getContext('2d'), W = cv.width, c = W / 2;
         x.clearRect(0, 0, W, W);
-        x.save(); x.beginPath(); x.arc(c, c, W / 2, 0, 7); x.clip();
+        x.save(); x.beginPath(); x.arc(c, c, W / 2, 0, Math.PI * 2); x.clip();
         x.fillStyle = '#000'; x.fillRect(0, 0, W, W); x.drawImage(img, 0, 0, W, W);
         // weicher Abschluss zum Rand
         const g = x.createRadialGradient(c, c, W * 0.43, c, c, W * 0.5); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
@@ -153,15 +153,15 @@
       const o = off.getContext('2d'); o.drawImage(cv, 0, 0);
       o.globalCompositeOperation = 'color-burn'; o.fillStyle = '#f7f7f7'; o.fillRect(0, 0, size, size);
       selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter');
-      o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(c, c, R * 1.006, 0, 7); o.fill();
+      o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(c, c, R * 1.006, 0, Math.PI * 2); o.fill();
     }
     if (kind === 'ca') {
-      // Kontrast anheben (v² · 4): Netzwerk und Plages treten hervor, Hintergrund bleibt dunkel
-      liftLimb(x, c, R, size, 0.25);
-      selfDraw(x, cv, 'multiply');
-      { const t = document.createElement('canvas'); t.width = t.height = size; t.getContext('2d').drawImage(cv, 0, 0); x.globalCompositeOperation = 'lighter'; x.drawImage(t, 0, 0); x.drawImage(t, 0, 0); }
+      // Erst aufhellen (×2), dann Kontrast (v²) und nochmals ×1,5: Scheibe hell, Netzwerk und Plages treten hervor
+      liftLimb(x, c, R, size, 0.18);
+      selfDraw(x, cv, 'lighter'); selfDraw(x, cv, 'multiply');
+      x.globalAlpha = 0.5; selfDraw(x, cv, 'lighter'); x.globalAlpha = 1;
       x.globalCompositeOperation = 'multiply'; x.fillStyle = '#cfa8ff'; x.fillRect(0, 0, size, size);
-      x.globalCompositeOperation = 'screen'; x.fillStyle = 'rgba(62,26,125,.55)'; x.fillRect(0, 0, size, size); // Grundhelligkeit der Scheibe
+      x.globalCompositeOperation = 'screen'; x.fillStyle = 'rgba(62,26,125,.35)'; x.fillRect(0, 0, size, size); // Grundhelligkeit der Scheibe
     }
     else if (kind === 'ha') {
       liftLimb(x, c, R, size, 0.3);
@@ -173,8 +173,8 @@
       for (let i = 0; i <= 12; i++) { const r = i / 12, mu = Math.sqrt(Math.max(0, 1 - r * r)), ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2, v = Math.round(255 * ld); g.addColorStop(r, `rgb(${v},${v},${v})`); }
       x.globalCompositeOperation = 'multiply'; x.fillStyle = g; x.fillRect(0, 0, size, size);
     }
-    if (kind === 'ha') x.fillStyle = '#000'; // deckende Füllung, sonst schneidet der Zuschnitt die Scheibe mit aus
-    x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, 7); x.fill();
+    x.fillStyle = '#000'; // deckende Füllung, sonst wird die Scheibe beim Zuschnitt teilweise durchsichtig (dunkel)
+    x.globalCompositeOperation = 'destination-in'; x.beginPath(); x.arc(c, c, R * 1.004, 0, Math.PI * 2); x.fill();
     x.globalCompositeOperation = 'destination-over'; x.fillStyle = '#000'; x.fillRect(0, 0, size, size);
     if (off) { x.globalCompositeOperation = 'lighter'; x.drawImage(off, 0, 0); }
     x.globalCompositeOperation = 'source-over';
@@ -193,7 +193,7 @@
   function liftLimb(x, c, R, size, amount) {
     const g = x.createRadialGradient(c, c, R * 0.55, c, c, R);
     g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.7, `rgba(255,255,255,${amount * 0.45})`); g.addColorStop(1, `rgba(255,255,255,${amount})`);
-    x.globalCompositeOperation = 'screen'; x.fillStyle = g; x.beginPath(); x.arc(c, c, R, 0, 7); x.fill();
+    x.globalCompositeOperation = 'screen'; x.fillStyle = g; x.beginPath(); x.arc(c, c, R, 0, Math.PI * 2); x.fill();
   }
 
   /** Leuchtender Saum am Sonnenrand (Kalzium), damit die Scheibe klar vom Hintergrund abgesetzt ist. */
@@ -203,7 +203,7 @@
     if (kind === 'ha') { g.addColorStop(0, 'rgba(255,140,90,.7)'); g.addColorStop(0.25, 'rgba(230,70,35,.35)'); g.addColorStop(1, 'rgba(180,30,10,0)'); }
     else { g.addColorStop(0, 'rgba(205,170,255,.75)'); g.addColorStop(0.25, 'rgba(170,120,255,.35)'); g.addColorStop(1, 'rgba(120,70,220,0)'); }
     x.globalCompositeOperation = 'lighter'; x.fillStyle = g;
-    x.beginPath(); x.arc(c, c, R * 1.06, 0, 7); x.arc(c, c, R * 0.985, 0, 7, true); x.fill();
+    x.beginPath(); x.arc(c, c, R * 1.06, 0, Math.PI * 2); x.arc(c, c, R * 0.985, 0, Math.PI * 2, true); x.fill();
     x.restore();
   }
 
