@@ -105,7 +105,9 @@
         // Überschuss über Himmel und Streulicht, abzüglich einer Rauschschwelle (≈ 4 % der Scheibenhelligkeit)
         const ex = Math.max(0, (lum[j] - sky[Math.min(SB - 1, (((rr - 1) / 0.6) * SB) | 0)]) / med - 0.04);
         const t = Math.min(1, (rr - 1) / 0.008), gain = 2 + 6 * t * t * (3 - 2 * t);
-        const v = Math.pow(Math.min(1, ex * gain), 0.8) * 245;
+        // bis 1,12 R voll, bis 1,145 R auslaufend: Die GONG-Bilder enden bei ≈ 1,16 R, deren Rand soll nicht aufleuchten
+        const fade = rr < 1.12 ? 1 : Math.max(0, 1 - (rr - 1.12) / 0.025);
+        const v = Math.pow(Math.min(1, ex * gain), 0.8) * 245 * fade;
         d[i] = v; d[i + 1] = v; d[i + 2] = v; d[i + 3] = 255; continue;
       }
       if (rr > 1.004) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = 255; continue; }
@@ -146,14 +148,30 @@
     x.drawImage(img, 0, 0, size, size);
     x.globalCompositeOperation = 'saturation'; x.fillStyle = '#808080'; x.fillRect(0, 0, size, size);
     // H-Alpha: Ring außerhalb des Rands getrennt verstärken – dort liegen die Protuberanzen.
-    // „Farbig nachbelichten“ mit Hellgrau zieht eine Schwelle von ≈ 3 % ab (Streulicht, Rauschen), danach ×8.
+    // Streulicht schätzen ohne Pixelzugriff: Ring (1,006–1,15 R) stark weichzeichnen; weil Scheibe und Bildrand
+    // durchsichtig sind, mittelt die Unschärfe nur über den Ring (normierte Faltung). |Ring − Streulicht| ergibt die
+    // Protuberanzen, eine Schwelle (≈ 2 %) entfernt Rauschen, danach ×16.
     let off = null;
     if (kind === 'ha') {
       off = document.createElement('canvas'); off.width = off.height = size;
       const o = off.getContext('2d'); o.drawImage(cv, 0, 0);
-      o.globalCompositeOperation = 'color-burn'; o.fillStyle = '#f7f7f7'; o.fillRect(0, 0, size, size);
-      selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter'); selfDraw(o, off, 'lighter');
+      o.fillStyle = '#000';
       o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(c, c, R * 1.006, 0, Math.PI * 2); o.fill();
+      o.globalCompositeOperation = 'destination-in'; o.beginPath(); o.arc(c, c, R * 1.15, 0, Math.PI * 2); o.fill();
+      const sm = document.createElement('canvas'); sm.width = sm.height = Math.max(16, Math.round(size / 24));
+      const smx = sm.getContext('2d'); smx.imageSmoothingQuality = 'high'; smx.drawImage(off, 0, 0, sm.width, sm.height);
+      const bl = document.createElement('canvas'); bl.width = bl.height = size;
+      const bx = bl.getContext('2d'); bx.imageSmoothingQuality = 'high';
+      for (let i = 0; i < 6; i++) bx.drawImage(sm, 0, 0, size, size); // Deckkraft auffüllen, Farbe = Mittel über den Ring
+      bx.globalCompositeOperation = 'destination-in'; bx.drawImage(off, 0, 0);
+      o.globalCompositeOperation = 'difference'; o.drawImage(bl, 0, 0);
+      o.globalCompositeOperation = 'color-burn'; o.fillStyle = '#fafafa'; o.fillRect(0, 0, size, size); // Schwelle ≈ 2 %
+      // die Mischung füllt durchsichtige Stellen – Scheibe wieder ausschneiden
+      o.fillStyle = '#000'; o.globalCompositeOperation = 'destination-out'; o.beginPath(); o.arc(c, c, R * 1.006, 0, Math.PI * 2); o.fill();
+      for (let i = 0; i < 4; i++) selfDraw(o, off, 'lighter'); // ×16
+      // bis ≈ 1,12 R, weich auslaufend (die GONG-Bilder enden bei ≈ 1,16 R)
+      const fg = o.createRadialGradient(c, c, R * 1.11, c, c, R * 1.145); fg.addColorStop(0, '#000'); fg.addColorStop(1, 'rgba(0,0,0,0)');
+      o.globalCompositeOperation = 'destination-in'; o.fillStyle = fg; o.fillRect(0, 0, size, size);
     }
     if (kind === 'ca') {
       // Erst aufhellen (×2), dann Kontrast (v²) und nochmals ×1,5: Scheibe hell, Netzwerk und Plages treten hervor
@@ -166,6 +184,9 @@
     else if (kind === 'ha') {
       liftLimb(x, c, R, size, 0.3);
       selfDraw(x, cv, 'multiply'); x.globalAlpha = 0.5; selfDraw(x, cv, 'lighter'); x.globalAlpha = 1; // Kontrast: v² · 1,5
+      // Details hervorheben: feine Strukturen (Fibrillen, Plages) und mittlere (Filamente, aktive Regionen)
+      highPassSharpen(cv, size / 400, 2);
+      highPassSharpen(cv, size / 120, 1);
     }
     else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
     if (kind === 'wl') {
@@ -180,6 +201,27 @@
     x.globalCompositeOperation = 'source-over';
     if (kind === 'ca') drawRim(x, c, R, kind);
     return cv;
+  }
+
+  /**
+   * Hochpass-Schärfung ohne Pixelzugriff (funktioniert auch mit Bildern fremder Server):
+   * Unschärfe durch Verkleinern/Vergrößern, Hochpass = (Bild + Negativ der Unschärfe) / 2 (Mittelgrau = keine Kante),
+   * dann per „Ineinanderkopieren“ (overlay) zurückmischen – wie „Hochpass schärfen“ in der Bildbearbeitung.
+   * blurPx: Unschärferadius in Pixeln, passes: Stärke (1–3).
+   */
+  function highPassSharpen(cv, blurPx = 3, passes = 2) {
+    const W = cv.width, H = cv.height, f = Math.max(1.5, blurPx);
+    const sm = document.createElement('canvas'); sm.width = Math.max(1, Math.round(W / f)); sm.height = Math.max(1, Math.round(H / f));
+    const sx = sm.getContext('2d'); sx.imageSmoothingQuality = 'high'; sx.drawImage(cv, 0, 0, sm.width, sm.height);
+    const hp = document.createElement('canvas'); hp.width = W; hp.height = H;
+    const hx = hp.getContext('2d'); hx.imageSmoothingQuality = 'high';
+    hx.fillStyle = '#fff'; hx.fillRect(0, 0, W, H);
+    hx.globalCompositeOperation = 'difference'; hx.drawImage(sm, 0, 0, W, H); // 255 − Unschärfe
+    hx.globalCompositeOperation = 'source-over'; hx.globalAlpha = 0.5; hx.drawImage(cv, 0, 0); hx.globalAlpha = 1;
+    const x = cv.getContext('2d');
+    x.save(); x.globalCompositeOperation = 'overlay';
+    for (let i = 0; i < passes; i++) x.drawImage(hp, 0, 0);
+    x.restore();
   }
 
   /** Leinwand mit einer Mischart auf sich selbst zeichnen – über eine Kopie (Selbst-Zeichnen ist nicht überall zuverlässig). */
@@ -222,5 +264,5 @@
 
   function arName(num) { return `AR ${num}`; }
 
-  root.SoluxUI = { rng, drawHalpha, drawSplash, colorizeSun, tintSun, fmt, esc, arName, D2R };
+  root.SoluxUI = { highPassSharpen, rng, drawHalpha, drawSplash, colorizeSun, tintSun, fmt, esc, arName, D2R };
 })(window);

@@ -48,10 +48,12 @@
     document.body.classList.toggle('kind-ha', state.kind === 'ha');
     $('#arHead').textContent = state.kind !== 'wl' ? 'Regionen & Plages' : 'Fleckengruppen';
   }
-  $('#kindSeg').addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b || b.dataset.k === state.kind) return;
-    state.kind = b.dataset.k; setKindButtons(); api.setConfig({ widget: { kind: state.kind } }); loadSun();
-  });
+  const KINDS = ['wl', 'ca', 'ha'], KIND_LABEL = { wl: 'Weißlicht', ca: 'Kalzium', ha: 'H-Alpha' };
+  function setKind(k) {
+    if (k === state.kind) return;
+    state.kind = k; setKindButtons(); api.setConfig({ widget: { kind: state.kind } }); loadSun();
+  }
+  $('#kindSeg').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setKind(b.dataset.k); });
 
   let sunReq = 0;
   let lastSun = 0, lastWx = 0;
@@ -73,7 +75,8 @@
       const img = new Image();
       await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = sun.dataUrl || sun.url; });
       state.sun = sun;
-      state.sunCanvas = sun.dataUrl ? U.colorizeSun(img, state.kind, 560, sun.radiusPx) : U.tintSun(img, state.kind, 560, sun.radiusPx);
+      const S = $('#sunCv').width, R1024 = (sun.radiusPx * 1024) / (sun.size || 1024);
+      state.sunCanvas = sun.dataUrl ? U.colorizeSun(img, state.kind, S, R1024) : U.tintSun(img, state.kind, S, R1024);
       $('#sunLoad').hidden = true;
       const d = new Date(sun.date);
       $('#capDate').textContent = fmt.utcDate(d);
@@ -178,12 +181,39 @@
   }
   document.addEventListener('click', (e) => { const b = e.target.closest('[data-region]'); if (b) showRegion(+b.dataset.region); });
 
-  $('#sunCv').addEventListener('click', (e) => {
+  // Sonne: Antippen = Region/Flare-Erklärung (auf Beschriftung) oder Großansicht · waagerecht wischen = Wellenlänge wechseln
+  let down = null;
+  $('#sunCv').addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+  $('#sunCv').addEventListener('pointercancel', () => { down = null; });
+  $('#sunCv').addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const dx = e.clientX - down.x, dy = e.clientY - down.y, dt = Date.now() - down.t; down = null;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > 1.6 * Math.abs(dy) && dt < 900) { swipeKind(dx < 0 ? 1 : -1); return; }
+    if (Math.hypot(dx, dy) > 10) return;
     const cv = e.currentTarget, rect = cv.getBoundingClientRect();
     const X = ((e.clientX - rect.left) / rect.width) * cv.width, Y = ((e.clientY - rect.top) / rect.height) * cv.height;
-    const hit = state.labelHits.find((h) => X >= h.x0 && X <= h.x1 && Y >= h.y0 && Y <= h.y1);
+    const hit = (state.labelHits || []).find((h) => X >= h.x0 && X <= h.x1 && Y >= h.y0 && Y <= h.y1);
     if (hit) hit.flare ? showFlare(hit.flare) : showRegion(hit.region);
+    else openBig();
   });
+  function swipeKind(dir) {
+    const i = KINDS.indexOf(state.kind), k = KINDS[(i + dir + KINDS.length) % KINDS.length];
+    setKind(k);
+    const t = $('#swipeTip'); t.textContent = KIND_LABEL[k]; t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+  }
+  /** Großansicht: am Mac eigenes Fenster, am Handy Vollbild mit 2048-px-Bild. */
+  async function openBig() {
+    if (!state.sun) return;
+    if (!WEB) { api.openViewer(state.kind); return; }
+    const kind = state.kind, sun = state.sun;
+    const v = window.SoluxViewer.open({ title: `Sonne · ${KIND_LABEL[kind]}`, sub: `${fmt.utcDate(sun.date)} ${fmt.utcHM(sun.date)} · ${sun.label}`, canvas: state.sunCanvas });
+    try {
+      const big = await api.sunImage(kind, sun.date, 2048);
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = big.url; });
+      if (v.open) v.setImage(U.tintSun(img, kind, 2048, (big.radiusPx * 1024) / big.size));
+    } catch (e) { v.fail('Hochaufgelöstes Bild nicht verfügbar'); }
+  }
 
   function renderRegionList() {
     const list = state.regions.filter((r) => r.type === 'spots' || state.kind !== 'wl');

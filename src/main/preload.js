@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('solux', {
   geoSearch: inv('geo:search'),
   quit: inv('app:quit'),
   openRecordings: inv('app:openRecordings'),
+  openViewer: inv('app:openViewer'),
   hideWidget: inv('app:hideWidget'),
   openExternal: inv('app:openExternal'),
   showLog: inv('app:showLog'),

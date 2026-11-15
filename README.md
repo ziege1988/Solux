@@ -12,6 +12,12 @@ beschriftet und mit Legende und Textdatei gespeichert.
   und **H-Alpha** (NSO/GONG)
 - H-Alpha in Schwarz-Weiß, mit verstärkten Protuberanzen am Rand: Der Bereich außerhalb der Scheibe wird je
   nach Abstand vom Himmel befreit und bis etwa ×8 aufgehellt.
+- **Großansicht:** Ein Klick auf die Sonne öffnet das Bild in 2048 px. Am Mac geschieht das in einem eigenen Fenster:
+  Mausrad = Zoom an der Mausposition, mit gedrückter linker Maustaste verschieben, Doppelklick = Zoom an/aus.
+  Am Handy erscheint es als Vollbild: mit zwei Fingern zoomen, mit einem Finger verschieben, Doppeltipp = Zoom an/aus.
+  × oben rechts oder Esc schließt.
+- **Handy:** Waagerecht über die Sonne wischen wechselt zwischen Weißlicht, Kalzium und H-Alpha. H-Alpha wird mit
+  1024 px und einer Hochpass-Schärfung dargestellt; Fibrillen, Filamente und aktive Regionen treten hervor.
 - **Flares** der letzten 24 h als Markierung im Bild (antippen für Details), Flares je Region im Erklärungsfenster
 - Fleckengruppen mit NOAA-Nummer, McIntosh- und Mt.-Wilson-Klasse; Klick öffnet die Erklärung mit
   Flare-Potenzial und Flächenverlauf

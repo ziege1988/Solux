@@ -8,7 +8,7 @@
 (() => {
   'use strict';
   const SW = window.SoluxSW, S = window.SoluxSeeing;
-  const VERSION = '1.5.5';
+  const VERSION = '1.6.0';
 
   const LS = {
     get(k, d) { try { const v = localStorage.getItem('solux.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
@@ -100,10 +100,10 @@
       return window.solux.getConfig();
     },
     refresh: async () => { wcache = null; return refresh(); },
-    sunImage: async (kind) => {
-      const meta = await jsonp(SW.closestImageUrl(kind, new Date()));
+    sunImage: async (kind, date, size = SW.IMG_SIZE) => {
+      const meta = await jsonp(SW.closestImageUrl(kind, date ? new Date(date) : new Date()));
       const src = SW.SOURCES[kind] || SW.SOURCES.wl;
-      return { kind, label: src.label, date: new Date(meta.date.replace(' ', 'T') + 'Z').toISOString(), size: SW.IMG_SIZE, radiusPx: SW.IMG_SIZE * SW.DISC_FRACTION, url: SW.screenshotUrl(kind, meta) };
+      return { kind, label: src.label, date: new Date(meta.date.replace(' ', 'T') + 'Z').toISOString(), size, radiusPx: size * SW.DISC_FRACTION, url: SW.screenshotUrl(kind, meta, size) };
     },
     regions: async (iso) => {
       const date = iso ? new Date(iso) : new Date();

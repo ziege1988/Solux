@@ -83,6 +83,21 @@ function openRecordings() {
   notifyAll('recordings-opened');
 }
 
+/** Großansicht der Sonne in einem eigenen Fenster (Mausrad zoomt, Ziehen verschiebt). */
+let viewerWin = null;
+function openViewer(kind = 'wl') {
+  if (viewerWin && !viewerWin.isDestroyed()) viewerWin.close();
+  const wa = screen.getPrimaryDisplay().workArea, side = Math.round(Math.min(wa.width, wa.height) * 0.9);
+  viewerWin = new BrowserWindow({
+    width: side, height: side, minWidth: 420, minHeight: 420, title: 'Solux · Sonne', backgroundColor: '#000000',
+    frame: false, show: false, fullscreenable: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  viewerWin.loadFile(R('renderer', 'viewer.html'), { query: { kind: ['wl', 'ca', 'ha'].includes(kind) ? kind : 'wl' } });
+  viewerWin.once('ready-to-show', () => { viewerWin.show(); viewerWin.focus(); });
+  viewerWin.on('closed', () => { viewerWin = null; });
+}
+
 function toggleWidget(show) {
   if (!widgetWin) createWidget();
   const vis = show ?? !widgetWin.isVisible();
@@ -267,6 +282,7 @@ function registerIpc() {
 
   ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('app:openRecordings', () => openRecordings());
+  ipcMain.handle('app:openViewer', (_e, kind) => openViewer(kind));
   ipcMain.handle('app:hideWidget', () => toggleWidget(false));
   ipcMain.handle('app:openExternal', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); });
   ipcMain.handle('app:showLog', () => shell.showItemInFolder(path.join(app.getPath('userData'), 'solux.log')));
@@ -346,6 +362,11 @@ async function devScreenshots(dir) {
     await widgetWin.webContents.executeJavaScript(code).catch((e) => log('shot ' + e.message));
     await wait(2500);
     await shot(widgetWin, name);
+  }
+  if (viewerWin && !viewerWin.isDestroyed()) {
+    await wait(Number(process.env.SOLUX_SHOT_VIEW_WAIT || 12000));
+    await shot(viewerWin, 'viewer');
+    if (process.env.SOLUX_SHOT_VIEW_JS) { await viewerWin.webContents.executeJavaScript(process.env.SOLUX_SHOT_VIEW_JS).catch((e) => log('view js ' + e.message)); await wait(1500); await shot(viewerWin, 'viewer2'); }
   }
   if (process.env.SOLUX_SHOT_REC) {
     openRecordings(); await wait(3000);

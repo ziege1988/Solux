@@ -18,7 +18,8 @@
 
   <div class="w-hero">
     <div class="sunbox">
-      <canvas id="sunCv" width="560" height="560" aria-label="Aktuelle Sonne"></canvas>
+      <canvas id="sunCv" width="560" height="560" aria-label="Aktuelle Sonne – antippen für die Großansicht"></canvas>
+      <div class="swipetip" id="swipeTip" aria-live="polite"></div>
       <span class="compass n">N</span><span class="compass e">O</span>
       <div class="sunload" id="sunLoad">Lade Sonnenbild …</div>
       <div class="seg kindseg" id="kindSeg" role="group" aria-label="Wellenlänge">
@@ -77,6 +78,7 @@
 <script src="../shared/mcintosh.js"></script>
 <script src="../shared/spaceweather.js"></script>
 <script src="common.js"></script>
+<script src="viewer.js"></script>
 <script src="widget.js"></script>
 </body>
 </html>
