@@ -134,6 +134,13 @@
       d[i + 3] = 255;
     }
     x.putImageData(id, 0, 0);
+    if (kind === 'wl') {
+      // Granulation und Fleckenstruktur schärfen, Scheibenrand danach wieder sauber ausschneiden
+      highPassSharpen(cv, size / 450, 2);
+      highPassSharpen(cv, size / 150, 1);
+      x.save(); x.globalCompositeOperation = 'destination-in'; x.fillStyle = '#000'; x.beginPath(); x.arc(c, c, R * 1.004, 0, Math.PI * 2); x.fill();
+      x.globalCompositeOperation = 'destination-over'; x.fillRect(0, 0, size, size); x.restore();
+    }
     if (kind === 'ca') drawRim(x, c, R, kind);
     return cv;
   }
@@ -188,7 +195,15 @@
       highPassSharpen(cv, size / 400, 2);
       highPassSharpen(cv, size / 120, 1);
     }
-    else { x.globalCompositeOperation = 'color'; x.fillStyle = '#f5c27a'; x.fillRect(0, 0, size, size); }
+    else {
+      // Weißlicht: sanfter Kontrast (Quadrat zu 35 % eingemischt, dann +20 %) – Flecken dunkler, Mitte nicht ausgefressen;
+      // Schärfung für Fleckenstruktur
+      x.globalAlpha = 0.35; selfDraw(x, cv, 'multiply'); x.globalAlpha = 0.2; selfDraw(x, cv, 'lighter'); x.globalAlpha = 1;
+      highPassSharpen(cv, size / 300, 1);
+      highPassSharpen(cv, size / 150, 1);
+      // Einfärben per Multiplikation: auch die hellste Stelle bleibt warm-orange (Mischart „Farbe“ wird dort weiß)
+      x.globalCompositeOperation = 'multiply'; x.fillStyle = '#ffcf8c'; x.fillRect(0, 0, size, size);
+    }
     if (kind === 'wl') {
       const g = x.createRadialGradient(c, c, 0, c, c, R);
       for (let i = 0; i <= 12; i++) { const r = i / 12, mu = Math.sqrt(Math.max(0, 1 - r * r)), ld = 1 - 0.56 * (1 - mu) - 0.12 * (1 - mu) ** 2, v = Math.round(255 * ld); g.addColorStop(r, `rgb(${v},${v},${v})`); }
