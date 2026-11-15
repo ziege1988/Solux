@@ -15,7 +15,8 @@ beschriftet und mit Legende und Textdatei gespeichert.
 - **Großansicht:** Ein Klick auf die Sonne öffnet das Bild in 2048 px. Am Mac geschieht das in einem eigenen Fenster:
   Mausrad = Zoom an der Mausposition, mit gedrückter linker Maustaste verschieben, Doppelklick = Zoom an/aus.
   Am Handy erscheint es als Vollbild: mit zwei Fingern zoomen, mit einem Finger verschieben, Doppeltipp = Zoom an/aus.
-  × oben rechts oder Esc schließt.
+  × oben rechts oder Esc schließt. Regionsnummern und Flares sind auch in der Großansicht eingezeichnet und bleiben
+  beim Zoomen gleich groß. Antippen bzw. Anklicken zeigt eine Kurzinfo; „Beschriftung“ blendet sie aus und ein.
 - **Handy:** Waagerecht über die Sonne wischen wechselt zwischen Weißlicht, Kalzium und H-Alpha. H-Alpha wird mit
   1024 px und einer Hochpass-Schärfung dargestellt; Fibrillen, Filamente und aktive Regionen treten hervor.
 - **Flares** der letzten 24 h als Markierung im Bild (antippen für Details), Flares je Region im Erklärungsfenster

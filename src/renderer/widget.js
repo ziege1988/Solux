@@ -206,7 +206,8 @@
     if (!state.sun) return;
     if (!WEB) { api.openViewer(state.kind); return; }
     const kind = state.kind, sun = state.sun;
-    const v = window.SoluxViewer.open({ title: `Sonne · ${KIND_LABEL[kind]}`, sub: `${fmt.utcDate(sun.date)} ${fmt.utcHM(sun.date)} · ${sun.label}`, canvas: state.sunCanvas });
+    const markers = window.SoluxViewer.markersFrom(state.regions, state.flares, kind, new Date(sun.date).getTime());
+    const v = window.SoluxViewer.open({ title: `Sonne · ${KIND_LABEL[kind]}`, sub: `${fmt.utcDate(sun.date)} ${fmt.utcHM(sun.date)} · ${sun.label}`, canvas: state.sunCanvas, markers, onMore: (m) => showRegion(m.region) });
     try {
       const big = await api.sunImage(kind, sun.date, 2048);
       const img = new Image();

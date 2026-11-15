@@ -12,5 +12,11 @@
     const cv = U.colorizeSun(img, kind, sun.size, (sun.radiusPx * 1024) / sun.size);
     v.setImage(cv);
     v.setSub(`${U.fmt.utcDate(sun.date)} ${U.fmt.utcHM(sun.date)} · ${sun.label}`);
+    // Regionsnummern und Flares wie im Widget
+    try {
+      const when = new Date(sun.date).getTime();
+      const [reg, fl] = await Promise.all([api.regions(sun.date), api.flares(when - 2 * 86400000)]);
+      v.setMarkers(window.SoluxViewer.markersFrom(reg.regions || [], fl || [], kind, when));
+    } catch { /* ohne Beschriftung */ }
   } catch (e) { v.fail('Bild nicht verfügbar: ' + e.message); }
 })();
