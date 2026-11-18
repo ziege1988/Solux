@@ -353,7 +353,7 @@
     set('#stWind', windLevel(c));
     if (w.seeing && w.seeing.value != null) {
       const r = S.rating(w.seeing.value);
-      set('#stSeeing', [w.seeing.isForecast ? 'off' : r.level, `${r.label} · ${fmt.num(w.seeing.value)}″${w.seeing.isForecast ? ' (Prog.)' : ''}`]);
+      set('#stSeeing', [w.seeing.isForecast ? 'off' : r.level, w.seeing.isForecast ? `${fmt.num(w.seeing.value)}″ (Prog.)` : `${r.label} · ${fmt.num(w.seeing.value)}″`]);
     } else set('#stSeeing', ['off', 'keine Daten']);
   }
 

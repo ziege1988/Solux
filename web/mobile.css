@@ -34,7 +34,7 @@ body { -webkit-text-size-adjust: 100%; }
 .w-status { padding: 12px 2px 10px; }
 .st { padding: 10px 10px; }
 .st b { font-size: 13px; }
-.st small { font-size: 11px; white-space: normal; }
+.st small { font-size: 11px; }
 .w-news { padding: 0 2px 6px; flex: none; }
 .newslist { overflow: visible; }
 .news p { font-size: 13.5px; }
