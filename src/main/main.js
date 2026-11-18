@@ -249,7 +249,11 @@ function registerIpc() {
     return cfg;
   });
   ipcMain.handle('data:refresh', () => refresh());
-  ipcMain.handle('data:sun', (_e, kind, date, size) => store.sunImage(kind, date, Math.min(4096, size || undefined) || undefined));
+  ipcMain.handle('data:sun', async (_e, kind, date, size, fresh) => {
+    try { return await store.sunImage(kind, date, Math.min(4096, size || undefined) || undefined, !!fresh); }
+    catch (e) { log(`Sonnenbild ${kind}: ${e.message}`); throw e; }
+  });
+  ipcMain.handle('app:log', (_e, msg) => log('Widget: ' + String(msg).slice(0, 500)));
   ipcMain.handle('data:regions', (_e, date) => store.regionsFor(date ? new Date(date) : new Date()));
   ipcMain.handle('data:regionHistory', (_e, num) => store.regionHistory(num));
   ipcMain.handle('data:flares', (_e, since) => store.flares(since));

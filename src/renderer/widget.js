@@ -65,16 +65,22 @@
     if (now - lastWx >= ev) loadWeather();
   }
 
-  async function loadSun() {
+  let sunRetry = 0;
+  const shortErr = (m) => String(m || 'unbekannt').replace(/^Error invoking remote method '[^']+': (Error: )?/, '').slice(0, 90);
+  async function loadSun(fresh = false) {
     lastSun = Date.now();
+    clearTimeout(sunRetry);
     const my = ++sunReq;
     $('#sunLoad').hidden = false; $('#sunLoad').textContent = 'Lade Sonnenbild …';
+    let step = 'Abruf';
     try {
-      const sun = await api.sunImage(state.kind);
+      const sun = await api.sunImage(state.kind, null, undefined, fresh);
       if (my !== sunReq) return;
+      step = 'Bild öffnen';
       const img = new Image();
-      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = sun.dataUrl || sun.url; });
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('Bilddatei beschädigt')); img.src = sun.dataUrl || sun.url; });
       state.sun = sun;
+      step = 'Einfärben';
       const S = $('#sunCv').width, R1024 = (sun.radiusPx * 1024) / (sun.size || 1024);
       state.sunCanvas = sun.dataUrl ? U.colorizeSun(img, state.kind, S, R1024) : U.tintSun(img, state.kind, S, R1024);
       $('#sunLoad').hidden = true;
@@ -83,12 +89,21 @@
       $('#capTime').textContent = fmt.utcHM(d);
       $('#capTime').title = 'Ortszeit ' + fmt.hm.format(d);
       $('#capSrc').textContent = sun.label;
-      await loadRegions();
+      drawSunCanvas();
     } catch (e) {
       if (my !== sunReq) return;
-      $('#sunLoad').hidden = false; $('#sunLoad').textContent = 'Sonnenbild nicht erreichbar – erneuter Versuch in 15 min';
+      const why = shortErr(e && e.message);
+      if (api.log) api.log(`Sonnenbild ${state.kind} (${step}): ${e && e.message}`);
+      // beschädigte Datei im Zwischenspeicher: einmal sofort frisch laden
+      if (!fresh && step === 'Bild öffnen') { loadSun(true); return; }
+      $('#sunLoad').hidden = false; $('#sunLoad').textContent = `Sonnenbild nicht erreichbar (${step}: ${why}) – neuer Versuch in 1 min`;
       if (!state.sunCanvas) drawSunCanvas();
+      sunRetry = setTimeout(() => loadSun(true), 60000);
+      return;
     }
+    // Regionen getrennt laden: ein Fehler hier darf das Sonnenbild nicht verhindern
+    try { await loadRegions(); }
+    catch (e) { if (api.log) api.log(`Regionen: ${e && e.message}`); drawSunCanvas(); }
   }
 
   async function loadRegions() {

@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('solux', {
   hideWidget: inv('app:hideWidget'),
   openExternal: inv('app:openExternal'),
   showLog: inv('app:showLog'),
+  log: inv('app:log'),
   rec: {
     openDialog: inv('rec:openDialog'),
     load: inv('rec:load'),

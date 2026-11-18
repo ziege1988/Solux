@@ -164,22 +164,30 @@ class DataStore {
   regionHistory(num) { return SW.regionHistory(Object.values(this.load('regions.json', {})), num); }
 
   /* ---------------- Sonnenbilder ---------------- */
-  async sunImage(kind = 'wl', date = null, size = IMG_SIZE) {
+  async sunImage(kind = 'wl', date = null, size = IMG_SIZE, fresh = false) {
     const src = SOURCES[kind] || SOURCES.wl;
     const when = date ? new Date(date) : new Date();
     const meta = await this.fetchJSON(SW.closestImageUrl(kind, when));
+    if (!meta || !meta.id || !meta.date) throw new Error('Helioviewer: keine Bildinformation' + (meta && meta.error ? ` (${meta.error})` : ''));
     const imgDate = new Date(meta.date.replace(' ', 'T') + 'Z');
     const cacheName = `${kind}_${meta.id}_${size}.png`;
     const cachePath = path.join(this.dir, 'images', cacheName);
-    if (!fs.existsSync(cachePath)) {
+    // Zwischenspeicher nur verwenden, wenn die Datei ein vollständiges PNG ist (sonst neu laden)
+    const isPng = (b) => b && b.length > 2000 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
+    let buf = null;
+    if (!fresh && fs.existsSync(cachePath)) { try { buf = fs.readFileSync(cachePath); } catch { buf = null; } if (!isPng(buf)) { this.log(`Zwischenspeicher beschädigt, lade neu: ${cacheName}`); buf = null; } }
+    if (!buf) {
       const res = await httpFetch(SW.screenshotUrl(kind, meta, size), { signal: AbortSignal.timeout(90000) });
-      if (!res.ok) throw new Error(`Sonnenbild nicht verfügbar (${res.status})`);
-      fs.writeFileSync(cachePath, Buffer.from(await res.arrayBuffer()));
+      if (!res.ok) throw new Error(`Helioviewer antwortet ${res.status}`);
+      buf = Buffer.from(await res.arrayBuffer());
+      if (!isPng(buf)) throw new Error(`Helioviewer lieferte kein Bild (${res.headers.get('content-type') || '?'}, ${buf.length} Byte)`);
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(cachePath, buf);
       this.pruneImages();
     }
     return {
       kind, label: src.label, date: imgDate.toISOString(), size, radiusPx: size * DISC_FRACTION,
-      dataUrl: 'data:image/png;base64,' + fs.readFileSync(cachePath).toString('base64'),
+      dataUrl: 'data:image/png;base64,' + buf.toString('base64'),
     };
   }
 
