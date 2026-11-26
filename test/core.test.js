@@ -247,3 +247,49 @@ test('NOAA-Ereignisarchiv: Tagesliste wird in Flares umgesetzt', () => {
   assert.strictEqual(new Date(c.max).toISOString(), '2024-04-24T00:05:00.000Z'); // über Mitternacht
   assert.match(SW15.eventsArchiveUrl('2024-04-23'), /solar_event_reports\/2024\/04\/20240423events\.txt$/);
 });
+
+/* ---------- 1.7.0: Kalzium-Plages, Rückkehrer ---------- */
+test('Kalzium-Plages: Fläche und Lage einer künstlichen Plage', () => {
+  const w = 800, c = 400, r = 300, g = new Float32Array(w * w);
+  // Scheibe mit Randverdunkelung, Plage als helle Scheibe (Radius 0,1 R) bei x = +0,3 R
+  for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) {
+    const d = Math.hypot(x - c, y - c) / r; if (d > 1) continue;
+    const mu = Math.sqrt(1 - d * d);
+    let v = 140 * (0.4 + 0.6 * mu) + ((x * 7 + y * 13) % 5) - 2; // leichtes „Netzwerk“-Rauschen
+    if (Math.hypot(x - (c + 0.3 * r), y - c) < 0.1 * r) v *= 1.6;
+    g[y * w + x] = v;
+  }
+  const res = AL.detectPlages(g, w, w, { cx: c, cy: c, r });
+  assert.strictEqual(res.plages.length, 1);
+  const p = res.plages[0];
+  assert.ok(Math.abs((p.u - c) / r - 0.3) < 0.02, `Lage ${(p.u - c) / r}`);
+  // projizierte Fläche π·0,1² R² → in MH: 0,01·π/(2π)·1e6 = 5000 MH, entzerrt bei µ ≈ 0,95 etwas mehr
+  assert.ok(p.areaMH > 4500 && p.areaMH < 6000, `Fläche ${p.areaMH}`);
+  assert.ok(p.excess > 0.4 && p.excess < 0.8, `Mehrhelligkeit ${p.excess}`);
+});
+
+test('Rückkehrer: Region am Westrand kehrt nach der berechneten Zeit am Ostrand zurück', () => {
+  const day = (d) => new Date(Date.UTC(2026, 10, d)).toISOString().slice(0, 10);
+  const t0 = Date.UTC(2026, 10, 16, 12);
+  const L0 = (t) => A.solarOrientation(new Date(t)).L0;
+  // Region bei Breite −8°: am 16.11. 00 UT auf CMD +70° (kurz vor dem Westrand), danach nicht mehr gemeldet
+  const lon = (L0(Date.UTC(2026, 10, 16)) + 70 + 360) % 360;
+  const rows = [
+    { observed_date: day(14), region: 4566, latitude: -8, carrington_longitude: lon, area: 520, spot_class: 'Dkc', mag_class: 'BGD', m_xray_events: 2 },
+    { observed_date: day(15), region: 4566, latitude: -8, carrington_longitude: lon, area: 400, spot_class: 'Dkc', mag_class: 'BGD', m_xray_events: 1 },
+    { observed_date: day(18), region: 4600, latitude: 12, carrington_longitude: 10, area: 10, spot_class: 'Axx', mag_class: 'A' },
+  ];
+  const ret = SW15.returningRegions(rows, t0);
+  assert.strictEqual(ret.length, 1);
+  const r = ret[0];
+  assert.strictEqual(r.region, 4566); assert.ok(r.hot);
+  const days = (r.returnAt - Date.UTC(2026, 10, 16)) / 86400000;
+  // von CMD +70° bis −90° (= +270°) sind 200°, bei ≈ 13,4°/Tag (Breite −8°) also knapp 15 Tage
+  assert.ok(days > 14.2 && days < 15.3, `Rückkehr nach ${days.toFixed(1)} Tagen`);
+  // Nachrichten: zwei Tage vor der Rückkehr erscheint die Ankündigung, Push nur am Rückkehrtag
+  const n = SW15.buildNews({ regions: rows }, { lat: 50, lon: 10 }, r.returnAt - 2 * 86400000);
+  assert.ok(n.items.some((i) => i.kind === 'return' && /AR 4566/.test(i.title)));
+  assert.strictEqual(SW15.pushMessages(n, [], 'interessant', r.returnAt - 2 * 86400000).length, 0);
+  const n2 = SW15.buildNews({ regions: rows }, { lat: 50, lon: 10 }, r.returnAt + 3600000);
+  assert.strictEqual(SW15.pushMessages(n2, [], 'interessant', r.returnAt + 3600000).length, 1);
+});

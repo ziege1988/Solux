@@ -11,6 +11,7 @@ self.onmessage = (e) => {
     else if (task === 'blobs') result = self.SoluxAlign.detectBlobs(args.gray, args.w, args.h, args.opts);
     else if (task === 'texture') result = self.SoluxAlign.textureIndex(args.gray, args.w, args.h, args.disc);
     else if (task === 'sharp') result = self.SoluxAlign.limbSharpness(args.gray, args.w, args.h, args.disc);
+    else if (task === 'plages') result = self.SoluxAlign.detectPlages(args.gray, args.w, args.h, args.disc, args.opts);
     else if (task === 'proms') result = self.SoluxAlign.measureProminences(args.gray, args.w, args.h, args.disc, args.opts);
     else if (task === 'spots') result = self.SoluxAlign.detectSpots(args.gray, args.w, args.h, args.disc, args.rotation, args.flip, args.opts);
     self.postMessage({ id, ok: true, result });

@@ -65,6 +65,7 @@
     <span class="spacer"></span>
     <button class="ghost" id="dClose">Zurück zur Auswertung</button>
   </div>
+  <div class="dtrend" id="dTrend" hidden></div>
   <div class="dgrid" id="dGrid"></div>
 </section>
 
@@ -139,7 +140,8 @@
       <label class="chk"><input type="checkbox" id="exLabels"> Regionsbeschriftung (AR + Klasse)</label>
       <label class="chk"><input type="checkbox" id="exGrid"> Heliografisches Gradnetz</label>
       <label class="chk"><input type="checkbox" id="exFlares"> Flares des Tages markieren</label>
-      <label class="chk" id="exPromsRow"><input type="checkbox" id="exProms"> Protuberanzen mit Höhe markieren</label></div>
+      <label class="chk" id="exPromsRow"><input type="checkbox" id="exProms"> Protuberanzen mit Höhe markieren</label>
+      <label class="chk" id="exPlagesRow"><input type="checkbox" id="exPlages"> Plages umranden (Kalzium)</label></div>
     <div class="row2">
       <div class="grp"><span class="gl">Format</span><div class="seg big" id="exFormat"><button type="button" data-v="jpeg">JPEG</button><button type="button" data-v="tiff">TIFF (verlustfrei)</button></div></div>
       <div class="grp" id="exQGrp"><span class="gl">JPEG-Qualität</span><div class="seg big" id="exQ"><button type="button" data-v="90">90</button><button type="button" data-v="95">95</button><button type="button" data-v="100">100</button></div></div>

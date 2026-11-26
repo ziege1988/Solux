@@ -24,10 +24,11 @@
     if (!dv.list.length) { g.innerHTML = '<div class="dempty"><b>Noch keine Einträge.</b><br>Jede ausgewertete Aufnahme landet automatisch hier – mit Regionen, Protuberanzen und Bildschärfe.<br>Ab zwei Aufnahmen derselben Region lässt sich ihre Entwicklung als Animation abspielen.</div>'; }
     else g.innerHTML = list.map((e) => {
       const sr = spotRegions(e), topP = (e.proms || []).reduce((m, p) => Math.max(m, p.km || 0), 0);
-      const facts = [sr.length ? `${sr.length} Fleckengruppe${sr.length === 1 ? '' : 'n'}` : (e.regions || []).length ? `${e.regions.length} Region(en)` : 'keine nummerierten Regionen', topP ? `Protuberanz ${Math.round(topP / 1000)} Tsd. km` : '', e.sharp && e.mode === 'wl' ? `Schärfe ${num(e.sharp)}″` : ''].filter(Boolean).join(' · ');
+      const facts = [sr.length ? `${sr.length} Fleckengruppe${sr.length === 1 ? '' : 'n'}` : (e.regions || []).length ? `${e.regions.length} Region(en)` : 'keine nummerierten Regionen', topP ? `Protuberanz ${Math.round(topP / 1000)} Tsd. km` : '', e.caIndex ? `Plages ${num(e.caIndex.coverage, 1)} %` : '', e.sharp && e.mode === 'wl' ? `Schärfe ${num(e.sharp)}″` : ''].filter(Boolean).join(' · ');
       return `<button class="dcard" data-id="${e.id}">${e.thumb ? `<img src="${e.thumb}" alt="">` : '<img alt="">'}
         <div class="dm"><b><span class="badge ${e.mode}">${MODE_SHORT[e.mode] || e.mode}</span>${esc(when(e))}</b><span class="note">${esc(TYPE[e.type] || '')}${e.timeUnknown ? ' · Uhrzeit unbekannt' : ''}</span><span>${esc(facts)}</span>${e.note ? `<span class="note">✎ ${esc(e.note.slice(0, 60))}</span>` : ''}</div></button>`;
     }).join('');
+    renderTrend();
     // Regionen, die mindestens zweimal vorkommen
     const cnt = new Map();
     for (const e of dv.list) for (const r of e.regions || []) if (r.region) cnt.set(r.region, (cnt.get(r.region) || 0) + 1);
@@ -35,6 +36,25 @@
     $('#dTrack').innerHTML = `<option value="">${opts.length ? 'Region verfolgen …' : 'Region verfolgen (ab 2 Aufnahmen)'}</option>` + opts.map(([r, n]) => `<option value="${r}">AR ${r} · ${n} Aufnahmen</option>`).join('');
     api.diary.info().then((i) => { $('#dInfo').textContent = `${i.count} Einträge · ${(i.bytes / 1048576).toFixed(1).replace('.', ',')} MB`; });
   }
+  /** Verlauf der Kalzium-Aktivität (Plage-Anteil der Halbkugel) über alle eigenen Kalziumaufnahmen. */
+  function renderTrend() {
+    const box = $('#dTrend');
+    const pts = dv.list.filter((e) => e.mode === 'ca' && e.caIndex && (dv.filter === 'all' || dv.filter === 'ca')).slice().sort((a, b) => new Date(a.time) - new Date(b.time));
+    if (pts.length < 2) { box.hidden = true; return; }
+    box.hidden = false;
+    const W = Math.max(320, Math.round(box.clientWidth - 26) || 640), H = 130, pl = 48, pr = 14, pt = 12, pb = 24;
+    const t0 = new Date(pts[0].time).getTime(), t1 = new Date(pts[pts.length - 1].time).getTime() || t0 + 1;
+    const vmax = Math.max(1, ...pts.map((e) => e.caIndex.coverage)) * 1.15;
+    const X = (t) => pl + ((t - t0) / Math.max(1, t1 - t0)) * (W - pl - pr), Y = (v) => H - pb - (v / vmax) * (H - pt - pb);
+    const path = pts.map((e, i) => `${i ? 'L' : 'M'}${X(new Date(e.time).getTime()).toFixed(1)},${Y(e.caIndex.coverage).toFixed(1)}`).join('');
+    const ticks = [0, vmax / 2, vmax].map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="#26262b"/><text x="${pl - 6}" y="${Y(v) + 4}" text-anchor="end">${num(v, 1)} %</text>`).join('');
+    const dots = pts.map((e) => `<circle cx="${X(new Date(e.time).getTime()).toFixed(1)}" cy="${Y(e.caIndex.coverage).toFixed(1)}" r="4.5" data-id="${e.id}"><title>${esc(when(e))}: ${num(e.caIndex.coverage, 2)} % · ${e.caIndex.totalMH} MH</title></circle>`).join('');
+    const lab = (t, anchor) => `<text x="${X(t)}" y="${H - 6}" text-anchor="${anchor}">${fmt.dateShort.format(new Date(t))}</text>`;
+    const last = pts[pts.length - 1].caIndex.coverage, prev = pts[pts.length - 2].caIndex.coverage;
+    box.innerHTML = `<div class="dth"><b>Kalzium-Aktivität</b><span class="note">Anteil der Halbkugel mit hellen Plages – aus deinen eigenen Aufnahmen · zuletzt ${num(last, 2)} % (${last >= prev ? '▲' : '▼'} ${num(Math.abs(last - prev), 2)})</span></div>
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Verlauf des Plage-Anteils">${ticks}<path d="${path}" fill="none" stroke="#d7c0ff" stroke-width="2"/>${dots}${lab(t0, 'start')}${lab(t1, 'end')}</svg>`;
+  }
+
   function open() { document.body.classList.add('diary-on'); $('#diary').hidden = false; $('#diaryBtn').classList.add('on'); refresh().then(render); }
   function close() { document.body.classList.remove('diary-on'); $('#diary').hidden = true; $('#diaryBtn').classList.remove('on'); }
   $('#diaryBtn').addEventListener('click', () => ($('#diary').hidden ? open() : close()));
@@ -42,6 +62,7 @@
   $('#dFilter').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; dv.filter = b.dataset.v; document.querySelectorAll('#dFilter button').forEach((x) => x.classList.toggle('on', x === b)); render(); });
   $('#dTrack').addEventListener('change', (e) => { if (e.target.value) { openTrack(+e.target.value); e.target.value = ''; } });
   $('#dGrid').addEventListener('click', (e) => { const c = e.target.closest('.dcard'); if (c) openDetail(c.dataset.id); });
+  $('#dTrend').addEventListener('click', (e) => { const c = e.target.closest('circle[data-id]'); if (c) openDetail(c.dataset.id); });
 
   async function image(id) {
     if (dv.imgs.has(id)) return dv.imgs.get(id);
@@ -63,6 +84,7 @@
       ['Ausrichtung', { auto: 'automatisch', manual: 'manuell', field: 'fortgeschrieben' }[e.method] || '–'],
       ['Bildschärfe', e.sharp ? `${num(e.sharp)}″ am Rand${e.seeingModel ? ` · Modell ${num(e.seeingModel)}″` : ''}` : '–'],
     ];
+    if (e.caIndex) kv.push(['Plages', `${num(e.caIndex.coverage, 2)} % der Halbkugel · ${e.caIndex.totalMH.toLocaleString('de-DE')} MH`]);
     $('#ddKv').innerHTML = kv.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
     const regs = (e.regions || []).filter((r) => r.region);
     $('#ddRegions').innerHTML = regs.length ? regs.map((r) => `<button data-r="${r.region}" title="Entwicklung von AR ${r.region} zeigen">AR ${r.region}${r.spotClass ? ' ' + esc(r.spotClass) : ' Plage'}${r.mag ? ' ' + esc(M.magSymbol(r.mag)) : ''}</button>`).join('') : '<span class="note">Keine nummerierten Regionen.</span>';
@@ -113,9 +135,10 @@
     t.frames = trackFrames(t.num, t.mode, $('#tSame').checked);
     $('#tTitle').textContent = `AR ${t.num} · Entwicklung über ${t.frames.length} Aufnahme${t.frames.length === 1 ? '' : 'n'}`;
     $('#tPos').max = Math.max(0, t.frames.length - 1); $('#tPos').value = 0; t.pos = 0;
-    $('#tTab').innerHTML = '<thead><tr><th>Datum</th><th></th><th>Klasse</th><th>Fläche</th><th>Flecken</th><th>Ort</th></tr></thead><tbody>' + t.frames.map((e, i) => {
+    $('#tTab').innerHTML = '<thead><tr><th>Datum</th><th></th><th>Klasse</th><th>Fläche</th><th>Flecken</th><th>Plage</th><th>Ort</th></tr></thead><tbody>' + t.frames.map((e, i) => {
       const r = e.regions.find((q) => q.region === t.num);
-      return `<tr data-i="${i}"><td>${esc(when(e))}</td><td><span class="badge ${e.mode}">${MODE_SHORT[e.mode]}</span></td><td>${esc(r.spotClass || 'Plage')} ${esc(M.magSymbol(r.mag) || '')}</td><td>${r.area != null ? r.area + ' MH' : '–'}</td><td>${r.numberSpots ?? '–'}</td><td>${esc(r.location || '')}</td></tr>`;
+      const pl = e.caIndex && e.caIndex.plages.find((q) => q.region === t.num);
+      return `<tr data-i="${i}"><td>${esc(when(e))}</td><td><span class="badge ${e.mode}">${MODE_SHORT[e.mode]}</span></td><td>${esc(r.spotClass || 'Plage')} ${esc(M.magSymbol(r.mag) || '')}</td><td>${r.area != null ? r.area + ' MH' : '–'}</td><td>${r.numberSpots ?? '–'}</td><td>${pl ? pl.areaMH.toLocaleString('de-DE') + ' MH' : '–'}</td><td>${esc(r.location || '')}</td></tr>`;
     }).join('') + '</tbody>';
     await Promise.all(t.frames.map((e) => image(e.id).catch(() => null)));
     draw();

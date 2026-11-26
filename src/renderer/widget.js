@@ -152,6 +152,27 @@
       state.labelHits.push({ region: r.region, x0: Math.min(tx, px) - 6, x1: Math.max(tx + tw, px) + 6, y0: Math.min(ly, py) - 10, y1: Math.max(ly, py) + 10 });
     }
       drawFlares(x, W, c, R);
+      drawReturners(x, W, c, R);
+  }
+
+  /** Erwartete Rückkehrer (von der Sonnenrückseite) am Ostrand andeuten – ±2 Tage um den berechneten Zeitpunkt. */
+  function drawReturners(x, W, c, R) {
+    const when = state.sun ? new Date(state.sun.date).getTime() : Date.now();
+    const list = ((state.news && state.news.items) || []).filter((i) => i.kind === 'return' && i.ret && !i.ret.returnedAs && Math.abs(i.ret.returnAt - when) < 2 * 86400000);
+    if (!list.length) return;
+    const B0 = A.solarOrientation(new Date(when)).B0;
+    x.save();
+    x.font = `600 ${Math.round(W * 0.026)}px ${getComputedStyle(document.body).getPropertyValue('--f-mono')}`; x.textBaseline = 'middle'; x.textAlign = 'right';
+    for (const i of list) {
+      const r = i.ret, p = A.heliographicToDisk(r.lat, -86, B0);
+      const px = c + p.x * R, py = c - p.y * R, rr = W * 0.022;
+      x.strokeStyle = r.hot ? '#ff9a3c' : 'rgba(243,181,68,.8)'; x.lineWidth = W / 300; x.setLineDash([W / 160, W / 220]);
+      x.beginPath(); x.arc(px, py, rr, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
+      const t = `↺ ${r.region}`, tx = Math.max(x.measureText(t).width + 4, px - rr - W * 0.012);
+      x.lineWidth = 4; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText(t, tx, py); x.fillStyle = r.hot ? '#ffb27a' : '#f3b544'; x.fillText(t, tx, py);
+      state.labelHits.push({ news: i, x0: tx - x.measureText(t).width - 4, x1: px + rr + 4, y0: py - rr - 4, y1: py + rr + 4 });
+    }
+    x.restore();
   }
 
   /** Position eines Flares zum Bildzeitpunkt (Region bevorzugt, sonst gemeldeter Ort + Rotation). */
@@ -208,7 +229,7 @@
     const cv = e.currentTarget, rect = cv.getBoundingClientRect();
     const X = ((e.clientX - rect.left) / rect.width) * cv.width, Y = ((e.clientY - rect.top) / rect.height) * cv.height;
     const hit = (state.labelHits || []).find((h) => X >= h.x0 && X <= h.x1 && Y >= h.y0 && Y <= h.y1);
-    if (hit) hit.flare ? showFlare(hit.flare) : showRegion(hit.region);
+    if (hit) hit.news ? showNews(hit.news) : hit.flare ? showFlare(hit.flare) : showRegion(hit.region);
     else openBig();
   });
   function swipeKind(dir) {
@@ -407,12 +428,15 @@
       $('#newsList').innerHTML = n.items.length ? n.items.map((i, k) => `<button class="news" data-news="${k}"><i class="${i.level}"></i><p>${esc(i.title)}<small>${esc(i.detail)}</small></p><time>${fmt.ago(i.time)}</time></button>`).join('') : '<p class="note">Keine aktuellen Meldungen.</p>';
       $('#newsMeta').textContent = n.updated ? 'Stand ' + fmt.hm.format(new Date(n.updated)) : '';
       $('#footInfo').textContent = `SN ${n.ssn ?? '–'} · F10.7 ${n.flux ?? '–'} · NASA SDO · NOAA SWPC · Open-Meteo`;
+      if (state.sun) drawSunCanvas(); // Rückkehrer-Markierung aktualisieren
     } catch { /* offline */ }
   }
 
   $('#newsList').addEventListener('click', (e) => {
     const b = e.target.closest('[data-news]'); if (!b || !state.news) return;
-    const i = state.news.items[+b.dataset.news]; if (!i) return;
+    const i = state.news.items[+b.dataset.news]; if (i) showNews(i);
+  });
+  function showNews(i) {
     const st = window.SoluxSW ? window.SoluxSW.newsStory(i) : { sections: [{ h: 'Info', p: i.detail }] };
     const reg = /AR (\d{4,5})/.exec(i.title + ' ' + i.detail);
     openPop(`<div class="hd"><div><span class="lbl">Newsroom · ${fmt.ago(i.time)}</span><h2>${esc(i.title)}</h2></div><button class="xbtn" data-close aria-label="Schließen">×</button></div>
@@ -420,7 +444,7 @@
       <div class="story">${st.sections.map((x) => `<h4>${esc(x.h)}</h4><p>${esc(x.p)}</p>`).join('')}</div>
       ${reg && state.regions.some((r) => r.region === +reg[1]) ? `<button class="ghost" data-region="${reg[1]}" style="align-self:flex-start">Zur Region AR ${reg[1]}</button>` : ''}
       <button class="ghost" data-glossary style="align-self:flex-start">Begriffe erklärt</button>`);
-  });
+  }
 
   /* ---------------- Popups ---------------- */
   function openPop(html) { $('#setPop').hidden = true; const p = $('#pop'); p.innerHTML = html; p.hidden = false; p.scrollTop = 0; }

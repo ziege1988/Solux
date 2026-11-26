@@ -51,6 +51,7 @@
         else if (task === 'texture') res(AL.textureIndex(args.gray, args.w, args.h, args.disc));
         else if (task === 'sharp') res(AL.limbSharpness(args.gray, args.w, args.h, args.disc));
         else if (task === 'proms') res(AL.measureProminences(args.gray, args.w, args.h, args.disc, args.opts));
+        else if (task === 'plages') res(AL.detectPlages(args.gray, args.w, args.h, args.disc, args.opts));
         else res(AL.detectSpots(args.gray, args.w, args.h, args.disc, args.rotation, args.flip, args.opts));
       } catch (e) { rej(e); }
     }, 30));
@@ -70,7 +71,7 @@
   async function init() {
     st.cfg = await api.getConfig();
     setMode(st.cfg.recordings.lastMode || 'wl', false);
-    st.exp = { text: 'list', scale: 'none', labels: true, grid: true, flares: false, flaresHa: true, proms: true, format: 'jpeg', quality: 95, txt: true, ...(st.cfg.recordings.export || {}) };
+    st.exp = { text: 'list', scale: 'none', labels: true, grid: true, flares: false, flaresHa: true, proms: true, plages: true, format: 'jpeg', quality: 95, txt: true, ...(st.cfg.recordings.export || {}) };
     syncOptBar();
     updateProfileInfo();
   }
@@ -357,7 +358,7 @@
     const f = st.file, src = st.src;
     let prof = st.cfg.profiles[st.mode];
     st.scaleFull = st.scaleFull || scaleFromConfig();
-    st.sharp = null; st.seeingRec = null; st.proms = null; st.promCoverage = null; st.diaryId = null;
+    st.sharp = null; st.seeingRec = null; st.proms = null; st.promCoverage = null; st.diaryId = null; st.caPlages = null;
     try {
       logLine(`▸ Datei  ${esc(f.name)}  ${src.width}×${src.height} px  ${(f.size / 1048576).toFixed(1)} MB  ${f.format.toUpperCase()}`);
       await sleep(250);
@@ -597,6 +598,31 @@
         }
       }
 
+      // Kalzium: Plages erkennen und vermessen
+      if (st.mode === 'ca' && dWork && st.type !== 'surface') {
+        logLine('▸ Plages vermessen  (Helligkeit gegen Ring-Median, Fläche in MH, perspektivisch korrigiert)');
+        const pr = await compute('plages', { gray: grayD, w: wc.width, h: wc.height, disc: dWork, opts: {} });
+        if (!alive()) return;
+        const al = st.align, aligned = al && al.method !== 'none';
+        const list = pr.plages.map((p) => {
+          const q = aligned ? mapToSun(p.u, p.v, dWork, al.rotation, al.flip) : null;
+          let region = null;
+          if (q) {
+            const cands = (st.groups || []).map((g) => ({ g, d: Math.hypot(g.x - q.x, g.y - q.y) })).filter((c) => c.d < 0.2).sort((a, b) => a.d - b.d);
+            if (cands.length) region = cands[0].g.region.region;
+          }
+          const hel = q ? A.diskToHeliographic(q.x, q.y, st.eph.B0) : null;
+          return { ...p, x: q ? q.x : null, y: q ? q.y : null, region, loc: hel ? A.formatLocation(hel.lat, hel.cmd) : null };
+        });
+        // je Region nur den größten Teil benennen; weitere Teile derselben Region zusammenzählen
+        const byReg = new Map();
+        for (const p of list) if (p.region) { const e = byReg.get(p.region); if (!e) byReg.set(p.region, { ...p }); else { e.areaMH += p.areaMH; e.excess = Math.max(e.excess, p.excess); } }
+        const merged = [...byReg.values(), ...list.filter((p) => !p.region)].sort((a, b) => b.areaMH - a.areaMH);
+        st.caPlages = { list: merged, totalMH: pr.totalMH, coverage: pr.coverage, meanExcess: pr.meanExcess, threshold: pr.threshold, mask: pr.mask, disc: dWork };
+        logLine(`  ✓ ${merged.length} Plage-Gebiete · gesamt ${pr.totalMH.toLocaleString('de-DE')} MH = ${num(pr.coverage, 2)} % der Halbkugel · Schwelle +${Math.round(pr.threshold * 100)} %`, 'ok');
+        for (const p of merged.slice(0, 6)) logLine(`  • ${p.region ? 'AR ' + p.region : 'ohne NOAA-Nummer'}${p.loc ? ' bei ' + p.loc : ''} · ${p.areaMH.toLocaleString('de-DE')} MH (${num(p.areaMH / 41.9, 0)} Erdscheiben) · +${Math.round(p.excess * 100)} % heller`);
+      }
+
       logLine('▸ Ausrichten (Norden oben, Osten links), beschriften, Legende setzen');
       renderPreview();
       st.txt = buildText();
@@ -729,6 +755,7 @@
         x.fillText('N', c, c - r - fs * 0.9); x.fillText('O', c - r - fs * 0.9, c); x.fillText('W', c + r + fs * 0.9, c); x.fillText('S', c, c + r + fs * 0.9);
       } else { drawCompass(x, fs, mono); drawScaleBar(x, geom, fs, mono); }
       if (opt.proms !== false && st.mode === 'ha' && st.proms && st.proms.length) drawProms(x, geom, fs);
+      if (opt.plages !== false && st.mode === 'ca' && st.caPlages) drawPlages(x, geom);
       if (opt.labels !== false) drawLabels(x, geom, fs, mono, accent);
       if (flaresOn(opt)) drawDayFlares(x, geom, fs, mono);
     }
@@ -862,6 +889,20 @@
     x.restore();
   }
 
+  /** Umrisse der Kalzium-Plages: Kanten der Maske (Arbeitsbild) über die Ausrichtung ins Ausgabebild übertragen. */
+  function drawPlages(x, g) {
+    const P = st.caPlages, m = P.mask, al = st.align; if (!m || !al || al.method === 'none') return;
+    const d = P.disc, k = m.k, W = m.w, H = m.h, on = (gx, gy) => (gx >= 0 && gy >= 0 && gx < W && gy < H && m.data[gy * W + gx] ? 1 : 0);
+    const toOut = (gx, gy) => { const q = mapToSun(gx / k, gy / k, d, al.rotation, al.flip); return [g.cx + q.x * g.r, g.cy - q.y * g.r]; };
+    x.save(); x.strokeStyle = 'rgba(255,226,120,.85)'; x.lineWidth = Math.max(1, g.r / 450); x.beginPath();
+    for (let gy = 0; gy <= H; gy++) for (let gx = 0; gx <= W; gx++) {
+      const a = on(gx, gy);
+      if (a !== on(gx - 1, gy)) { const [x0, y0] = toOut(gx, gy), [x1, y1] = toOut(gx, gy + 1); x.moveTo(x0, y0); x.lineTo(x1, y1); }
+      if (a !== on(gx, gy - 1)) { const [x0, y0] = toOut(gx, gy), [x1, y1] = toOut(gx + 1, gy); x.moveTo(x0, y0); x.lineTo(x1, y1); }
+    }
+    x.stroke(); x.restore();
+  }
+
   /** Flares des Aufnahmetags (±12 h) an ihren Regionen markieren. */
   function drawDayFlares(x, g, fs, mono) {
     // je Region nur der stärkste Flare (sonst liegen die Markierungen übereinander), dazu die Zahl der weiteren
@@ -991,6 +1032,12 @@
       lines.push(['m', [earths, r.location, r.numberSpots ? `${r.numberSpots} Flecken` : ''].filter(Boolean).join(' · ')]);
       lines.push(['g', '']);
     }
+    if (st.caPlages && st.caPlages.list.length) {
+      const P = st.caPlages, top = P.list[0];
+      lines.push(['s', 'Plages']);
+      lines.push(['p', `Helle Plages bedecken ${num(P.coverage, 1)} % der sichtbaren Sonne. Das größte Gebiet${top.region ? ` liegt um AR ${top.region}` : ' hat noch keine NOAA-Nummer'} und ist etwa ${num(top.areaMH / 41.9, 0)}-mal so groß wie die Erdscheibe.${P.list.some((p) => !p.region && p.areaMH >= 200) ? ' Es gibt helle Gebiete ohne Nummer – dort können neue Flecken entstehen.' : ''}`]);
+      lines.push(['g', '']);
+    }
     if (st.curOpt && flaresOn(st.curOpt)) {
       const fl = dayFlareList();
       if (fl && fl.length) {
@@ -1028,6 +1075,14 @@
     const fi = st.type !== 'full' ? fieldInfo() : null;
     if (fi) lines.push(['m', `Bildmitte ${fi.loc} · Feld ${fi.w.toFixed(1).replace('.', ',')}′ × ${fi.h.toFixed(1).replace('.', ',')}′ · ${fi.scale.toFixed(2).replace('.', ',')}″/px`]);
     lines.push(['g', '']);
+    // Kalzium: Plages vor der Regionsliste (sonst bei vielen Regionen abgeschnitten)
+    if (st.caPlages && st.caPlages.list.length) {
+      const P = st.caPlages;
+      lines.push(['s', 'Plages (Kalzium, gemessen)']);
+      lines.push(['m', `gesamt ${P.totalMH.toLocaleString('de-DE')} MH · ${num(P.coverage, 2)} % der Halbkugel`]);
+      for (const p of P.list.slice(0, 4)) lines.push(['a', `${(p.region ? 'AR ' + p.region : 'neu?').padEnd(8)} ${p.areaMH.toLocaleString('de-DE').padStart(6)} MH  +${Math.round(p.excess * 100)} %`]);
+      lines.push(['g', '']);
+    }
     if (st.groups && st.groups.length) {
       lines.push(['s', chromo() ? 'Aktive Regionen' : 'Fleckengruppen (NOAA)']);
       for (const g of st.groups) {
@@ -1142,6 +1197,16 @@
         L.push('');
       }
     } else L.push('Keine Regionsbeschriftung (Bild nicht ausgerichtet).');
+    if (st.caPlages) {
+      const P = st.caPlages;
+      L.push('');
+      L.push('PLAGES (KALZIUM) – gemessen in deiner Aufnahme');
+      L.push('-'.repeat(60));
+      L.push(`   Gesamtfläche ${P.totalMH.toLocaleString('de-DE')} MH = ${P.coverage.toFixed(2)} % der Halbkugel · mittlere Mehrhelligkeit der Scheibe ${(P.meanExcess * 100).toFixed(2)} %`);
+      L.push(`   Schwelle: ${Math.round(P.threshold * 100)} % heller als der Ring-Median · Mindestgröße 40 MH`);
+      for (const p of P.list) L.push(`   ${(p.region ? 'AR ' + p.region : 'ohne Nr.').padEnd(9)} ${p.loc || '–'}   ${String(p.areaMH).padStart(6)} MH   +${Math.round(p.excess * 100)} % (Mittel)   +${Math.round(p.peak * 100)} % (Spitze)`);
+      L.push('   Hinweis: Helligkeiten hängen von der Bildbearbeitung ab – Vergleichswerte für eigene Aufnahmen mit gleichem Ablauf.');
+    }
     {
       const fl = dayFlareList();
       L.push('');
@@ -1181,13 +1246,14 @@
     setSeg('exText', e.text); setSeg('exScale', e.scale); setSeg('exFormat', e.format); setSeg('exQ', e.quality);
     $('#exLabels').checked = e.labels !== false; $('#exGrid').checked = !!e.grid; $('#exFlares').checked = flaresOn(e); $('#exTxt').checked = e.txt !== false; $('#exProms').checked = e.proms !== false;
     $('#exPromsRow').hidden = st.mode !== 'ha';
+    $('#exPlages').checked = e.plages !== false; $('#exPlagesRow').hidden = st.mode !== 'ca';
     $('#exScale').style.opacity = st.type === 'full' ? 1 : 0.4;
     updateExportPreview();
     $('#exportDlg').hidden = false;
   }
   const exSeg = (id, key, num) => $(id).addEventListener('click', (ev) => { const b = ev.target.closest('button'); if (!b) return; setExp({ [key]: num ? +b.dataset.v : b.dataset.v }); setSeg(id.slice(1), num ? +b.dataset.v : b.dataset.v); updateExportPreview(); });
   exSeg('#exText', 'text'); exSeg('#exScale', 'scale'); exSeg('#exFormat', 'format'); exSeg('#exQ', 'quality', true);
-  [['#exLabels', 'labels'], ['#exGrid', 'grid'], ['#exFlares', null], ['#exTxt', 'txt'], ['#exProms', 'proms']].forEach(([id, key]) => $(id).addEventListener('change', () => { setExp({ [key || flareKey()]: $(id).checked }); updateExportPreview(); }));
+  [['#exLabels', 'labels'], ['#exGrid', 'grid'], ['#exFlares', null], ['#exTxt', 'txt'], ['#exProms', 'proms'], ['#exPlages', 'plages']].forEach(([id, key]) => $(id).addEventListener('change', () => { setExp({ [key || flareKey()]: $(id).checked }); updateExportPreview(); }));
   $('#exCancel').addEventListener('click', () => ($('#exportDlg').hidden = true));
   $('#exFolderBtn').addEventListener('click', async () => { const f = await api.rec.chooseFolder(); if (f) { st.cfg.recordings.folder = f; updateExportPreview(); } });
   $('#saveBtn').addEventListener('click', openExport);
@@ -1221,7 +1287,7 @@
   /** Ausgewertete Aufnahme ins Tagebuch: Vorschaubild, ausgerichtete Fassung (Norden oben) und Messwerte. */
   async function saveDiary() {
     const w = st.work;
-    const cv = renderOutput(w.canvas, w.disc, { text: 'none', scale: 'none', labels: false, grid: false, flares: false, flaresHa: false, proms: false }, w.k);
+    const cv = renderOutput(w.canvas, w.disc, { text: 'none', scale: 'none', labels: false, grid: false, flares: false, flaresHa: false, proms: false, plages: false }, w.k);
     const g = cv.__geom;
     const resize = (c, m) => { const f = Math.min(1, m / Math.max(c.width, c.height)); const o = document.createElement('canvas'); o.width = Math.round(c.width * f); o.height = Math.round(c.height * f); const ox = o.getContext('2d'); ox.imageSmoothingQuality = 'high'; ox.drawImage(c, 0, 0, o.width, o.height); return o; };
     const jpg = async (c, q) => (await new Promise((r) => c.toBlob(r, 'image/jpeg', q))).arrayBuffer();
@@ -1232,6 +1298,7 @@
       geom: g && g.r ? { cx: g.cx / cv.width, cy: g.cy / cv.height, r: g.r / cv.width, aspect: cv.width / cv.height } : null,
       regions, extra: (st.extra || []).length,
       proms: (st.proms || []).slice(0, 8).map((p) => ({ pa: p.pa != null ? Math.round(p.pa) : null, km: Math.round(p.km), lat: p.lat != null ? Math.round(p.lat) : null, side: p.side, width: Math.round(p.width) })),
+      caIndex: st.caPlages ? { coverage: +st.caPlages.coverage.toFixed(3), totalMH: st.caPlages.totalMH, meanExcess: +st.caPlages.meanExcess.toFixed(4), plages: st.caPlages.list.slice(0, 12).map((p) => ({ region: p.region, areaMH: p.areaMH, excess: +p.excess.toFixed(3) })) } : null,
       sharp: st.sharp ? +st.sharp.arcsec.toFixed(2) : null, seeingModel: st.seeingRec && st.seeingRec.model ? +st.seeingRec.model.toFixed(2) : null,
       alt: +st.eph.alt.toFixed(1), place: st.cfg.location.name, regionsDay: st.regionsDay || null, version: st.cfg.version,
     };

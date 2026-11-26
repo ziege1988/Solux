@@ -186,6 +186,63 @@
     return { day: pick, validAt: validAt(pick).toISOString(), regions };
   }
 
+  /* ---------------- Rückkehrer (Carrington-Rotation) ---------------- */
+  /**
+   * Regionen, die hinter dem Westrand verschwunden sind, und wann sie am Ostrand zurückkehren.
+   * Grundlage: zuletzt gemeldete Carrington-Länge und Breite, fortgeschrieben mit der breitenabhängigen
+   * Rotation (Snodgrass). Neue NOAA-Gruppen nahe der erwarteten Stelle werden als „zurückgekehrt“ zugeordnet.
+   * rows: Rohdaten (solar_regions.json, mehrere Tage). Rückgabe: [{region, lat, returnAt, cmAt, maxArea, …}]
+   */
+  function returningRegions(rows, nowMs = Date.now()) {
+    const SYN = 360 / 27.2753; // Carrington-Länge der Scheibenmitte nimmt so viele Grad pro Tag ab
+    const validAt = (d) => new Date(d + 'T00:00:00Z').getTime() + 86400000;
+    const byReg = new Map();
+    let lastDay = '';
+    for (const r of rows || []) {
+      if (r.region == null || r.carrington_longitude == null || r.latitude == null) continue;
+      (byReg.get(r.region) || byReg.set(r.region, []).get(r.region)).push(r);
+      if (r.observed_date > lastDay) lastDay = r.observed_date;
+    }
+    if (!lastDay) return [];
+    const recentDays = new Set([lastDay, new Date(new Date(lastDay + 'T00:00:00Z').getTime() - 86400000).toISOString().slice(0, 10)]);
+    const now = new Date(nowMs), L0 = astro.solarOrientation(now).L0;
+    const lonAt = (row, t) => row.carrington_longitude + astro.driftVsCarrington(row.latitude) * ((t - validAt(row.observed_date)) / 86400000);
+    const rate = (lat) => SYN + astro.driftVsCarrington(lat); // Zunahme der Mittelmeridian-Distanz in °/Tag
+    const magRank = (m) => (/D/i.test(m || '') ? 3 : /G/i.test(m || '') ? 2 : /B/i.test(m || '') ? 1 : 0);
+    const out = [], fresh = [];
+    for (const [num, list] of byReg) {
+      list.sort((a, b) => a.observed_date.localeCompare(b.observed_date));
+      const last = list[list.length - 1];
+      const visibleNow = list.some((r) => recentDays.has(r.observed_date));
+      const first = list[0];
+      if (visibleNow && first.observed_date >= new Date(nowMs - 5 * 86400000).toISOString().slice(0, 10)) fresh.push({ num, row: last, firstDay: first.observed_date });
+      if (visibleNow) continue;
+      const lastCmd = astro.norm180(last.carrington_longitude - astro.solarOrientation(new Date(validAt(last.observed_date))).L0);
+      if (lastCmd < 40) continue; // nicht am Westrand verschwunden (z. B. vorher zerfallen)
+      const cmdNow = astro.norm180(lonAt(last, nowMs) - L0);
+      // Winkel bis zum Ostrand (−90°); kurz nach dem Erscheinen leicht negativ, damit die Ankündigung bis zu 2 Tage bleibt
+      let delta = astro.norm180(-90 - cmdNow); if (delta < -30) delta += 360;
+      const days = delta / rate(last.latitude);
+      const lastSeenMs = validAt(last.observed_date);
+      if ((nowMs - lastSeenMs) / 86400000 > 24 || days > 16 || days < -2) continue;
+      const maxRow = list.reduce((a, b) => ((b.area || 0) > (a.area || 0) ? b : a));
+      const mag = list.reduce((a, b) => (magRank(b.mag_class) > magRank(a) ? b.mag_class : a), '');
+      const m = list.reduce((s2, r) => s2 + (r.m_xray_events || 0), 0), x = list.reduce((s2, r) => s2 + (r.x_xray_events || 0), 0);
+      if ((maxRow.area || 0) < 60 && magRank(mag) < 2 && !m && !x) continue; // nur nennenswerte Gruppen
+      const returnAt = nowMs + days * 86400000;
+      const hot = magRank(mag) >= 3 || (maxRow.area || 0) >= 300 || x > 0 || m >= 2;
+      out.push({ region: num, lat: last.latitude, returnAt, cmAt: returnAt + (90 / rate(last.latitude)) * 86400000, lastSeen: lastSeenMs,
+        maxArea: maxRow.area || 0, maxClass: maxRow.spot_class || '', mag, mFlares: m, xFlares: x, hot, carrLonNow: ((lonAt(last, nowMs) % 360) + 360) % 360, lastRow: last });
+    }
+    // Zurückgekehrt? Neue Gruppe nahe Ostrand, gleiche Breite (±7°) und Carrington-Länge (±15°)
+    for (const r of out) {
+      const cand = fresh.find((f) => Math.abs(f.row.latitude - r.lat) <= 7 && Math.abs(astro.norm180(lonAt(f.row, nowMs) - lonAt(r.lastRow, nowMs))) <= 15);
+      if (cand && r.returnAt - nowMs < 4 * 86400000) r.returnedAs = cand.num;
+    }
+    out.forEach((r) => delete r.lastRow);
+    return out.sort((a, b) => a.returnAt - b.returnAt);
+  }
+
   function regionHistory(rows, num) {
     return (rows || []).filter((r) => r.region === num && r.spot_class).sort((a, b) => a.observed_date.localeCompare(b.observed_date))
       .map((r) => ({ day: r.observed_date, cls: r.spot_class, mag: r.mag_class, area: r.area, n: r.number_spots, flares: { c: r.c_xray_events, m: r.m_xray_events, x: r.x_xray_events } }));
@@ -297,6 +354,23 @@
       const t = new Date(r.first_date + 'Z').getTime();
       if (now - t < 48 * 3600000 && now - t > 0) items.push({ level: 'ok', title: `Neue Region AR ${r.region}`, detail: `Position ${r.location}`, time: t, kind: 'region' });
     }
+    // Rückkehrer: Regionen von der Sonnenrückseite (Carrington-Rotation)
+    const MAGTXT = (m) => (/D/i.test(m) ? 'βγδ' : /G/i.test(m) ? 'βγ' : /B/i.test(m) ? 'β' : '');
+    const dayFmt = (t) => new Date(t).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+    for (const r of returningRegions(d.regions, now)) {
+      const facts = [r.maxClass && `zuletzt ${r.maxClass}`, MAGTXT(r.mag), r.maxArea ? `max. ${r.maxArea} MH` : '', r.xFlares ? `${r.xFlares}× X-Flare` : r.mFlares ? `${r.mFlares}× M-Flare` : ''].filter(Boolean).join(', ');
+      const ret = { region: r.region, lat: r.lat, returnAt: r.returnAt, cmAt: r.cmAt, hot: r.hot, returnedAs: r.returnedAs || null };
+      if (r.returnedAs) {
+        items.push({ level: r.hot ? 'warn' : 'ok', title: `Zurück: AR ${r.returnedAs} ist die frühere AR ${r.region}`, detail: `${facts} · am Ostrand, Scheibenmitte um ${dayFmt(r.cmAt)}`, time: now - 120000, kind: 'return', ret, push: r.hot });
+        continue;
+      }
+      const inDays = (r.returnAt - now) / 86400000;
+      if (inDays > 5 || (!r.hot && inDays > 3)) continue;
+      const when = inDays < 0.5 ? 'jetzt' : `um ${dayFmt(r.returnAt)}`;
+      items.push({ level: r.hot ? 'warn' : 'ok', title: `Rückkehr erwartet: frühere AR ${r.region}`, detail: `${when} am Ostrand (${r.lat >= 0 ? 'N' : 'S'}${String(Math.abs(Math.round(r.lat))).padStart(2, '0')}) · ${facts}`, time: now - 60000, kind: 'return', ret,
+        push: r.hot && Math.abs(inDays) < 0.75 }); // Push nur am Tag der Rückkehr
+    }
+
     const uniq = [];
     for (const i of items.sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.time - a.time)) if (!uniq.some((u) => u.title === i.title)) uniq.push(i);
     return { items: uniq.slice(0, 12), ssn: d.ssn ?? null, flux: d.flux ?? null, updated: d.updated };
@@ -338,6 +412,11 @@
       S.push({ h: 'Wie sicher ist das?', p: 'Der Kp-Wert ist eine Vorhersage für 3-Stunden-Abschnitte. Die tatsächliche Stärke kann abweichen – es lohnt sich, mehrmals rauszuschauen.' });
     } else if (i.kind === 'kp') {
       S.push({ h: 'Was heißt das?', p: 'Der Kp-Index misst die Unruhe des Erdmagnetfelds von 0 (ruhig) bis 9 (extremer Sturm). ' + (i.level === 'ok' ? 'Gerade ist es ruhig – keine Polarlichter in Mitteleuropa zu erwarten.' : 'Ein geomagnetischer Sturm ist möglich; an deinem Standort reicht es für Polarlichter aber voraussichtlich noch nicht.') });
+    } else if (i.kind === 'return') {
+      const r = i.ret || {};
+      S.push({ h: 'Was heißt das?', p: `Die Sonne dreht sich in etwa 27 Tagen einmal um sich selbst. AR ${r.region} ist vor rund zwei Wochen hinter dem Westrand verschwunden und hat seitdem die Rückseite überquert. ${r.returnedAs ? `Jetzt ist am Ostrand an derselben Stelle eine Gruppe aufgetaucht – sie hat die neue Nummer AR ${r.returnedAs} bekommen.` : 'Nach ihrer Lage auf der Sonne (Carrington-Länge und Breite) ist sie jetzt am Ostrand zurück zu erwarten.'}` });
+      S.push({ h: 'Wie sicher ist das?', p: r.returnedAs ? 'Ort und Breite passen zur früheren Region. Ganz sicher ist eine Zuordnung nie – auf der Rückseite kann eine Gruppe zerfallen und an derselben Stelle eine neue entstehen.' : 'Wann und wo sie auftaucht, lässt sich auf etwa einen halben Tag genau berechnen. Ob sie die zwei Wochen auf der Rückseite überstanden hat, zeigt sich erst am Rand: Gruppen können zerfallen, wachsen oder sich neu ordnen.' });
+      S.push({ h: 'Beobachtungstipp', p: `Am Ostrand stehen Flecken stark verkürzt; ${r.hot ? 'Protuberanzen und Plages zeigen sich dort aber besonders schön (H-Alpha, Kalzium). ' : ''}In 3–4 Tagen ist die Region gut sichtbar, die Scheibenmitte erreicht sie um den ${new Date(r.cmAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }).replace(/\.$/, '')}.` });
     } else if (i.kind === 'region') {
       S.push({ h: 'Was ist passiert?', p: `${i.title.replace('Neue Region ', '')} hat eine neue Nummer bekommen. ${/E[6-9]\d/.test(i.detail) ? 'Sie ist am Ostrand ins Blickfeld gedreht – die Sonne dreht sich in etwa 27 Tagen einmal um sich selbst.' : 'Sie ist mitten auf der Scheibe neu entstanden – ein Zeichen frischer magnetischer Aktivität.'}` });
       S.push({ h: 'Lohnt sich ein Blick?', p: 'Neue Regionen verändern sich oft schnell. Ein Foto heute und in ein paar Tagen zeigt schön, wie Flecken wachsen oder zerfallen.' });
@@ -367,6 +446,7 @@
     const day = new Date(nowMs).toISOString().slice(0, 10), out = [];
     for (const i of news.items || []) {
       if (nowMs - i.time > 6 * 3600000 && i.kind !== 'aurora' && i.kind !== 'kp') continue;
+      if (i.kind === 'return' && !i.push) continue; // Rückkehrer nur am Tag der Rückkehr bzw. bei Bestätigung melden
       const strong = pushWorthy(i);
       if (!strong && mode !== 'alle') continue;
       if (mode === 'alle' && i.level === 'ok' && i.kind !== 'region') continue; // „Magnetfeld ruhig“ u. Ä. nicht melden
@@ -385,6 +465,7 @@
   /** Ist eine Meldung „brisant“ genug für eine Push-Mitteilung? */
   function pushWorthy(item) {
     if (item.kind === 'aurora') return true;
+    if (item.kind === 'return') return !!item.push;
     if (item.kind === 'flare') return /^X/.test(item.title) || /^M([5-9]|\d{2})/.test(item.title);
     if (item.kind === 'alert') return item.level === 'bad';
     return false;
@@ -395,6 +476,6 @@
     return `${item.kind}|${item.title}|${item.kind === 'aurora' ? t.slice(0, 10) : t.slice(0, 13)}`;
   }
 
-  const api = { EVENTS_ARCHIVE, eventsArchiveUrl, parseEvents, newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, weatherDayUrl, modelSeeingAt, buildWeather, buildNews, translateAlert };
+  const api = { returningRegions, EVENTS_ARCHIVE, eventsArchiveUrl, parseEvents, newsStory, pushMessages, interestingReason, flareEvents, flareRank, parseSRS, srsArchiveUrl, srsIssueDays, SRS_ARCHIVE, pushWorthy, pushKey, SWPC, HV, SOURCES, IMG_SIZE, DISC_FRACTION, SWPC_URLS, closestImageUrl, screenshotUrl, normKp, computeRegions, regionHistory, weatherUrl, weatherDayUrl, modelSeeingAt, buildWeather, buildNews, translateAlert };
   if (isNode) module.exports = api; else root.SoluxSW = api;
 })(typeof self !== 'undefined' ? self : this);

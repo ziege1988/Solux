@@ -26,6 +26,11 @@ beschriftet und mit Legende und Textdatei gespeichert.
 - Sonnenhöhe des Tages am Standort, mit Sommer- und Winterkurve, Auf- und Untergang und Jahreszeit
 - Ampeln für **Wetter**, **Seeing** und **Wind**; ein Klick zeigt Details und eine Stundenprognose
 - Newsroom: Flares, Kp-Prognose, Polarlicht-Chance für den Standort, SWPC-Warnungen, neue Regionen
+- **Rückkehrer-Vorschau (Carrington-Rotation):** Regionen, die hinter dem Westrand verschwunden sind, werden über
+  ihre Carrington-Länge und Breite weitergerechnet, mit breitenabhängiger Rotation. Solux kündigt ihre Rückkehr am
+  Ostrand an: im Newsroom, mit einer Markierung „↺“ am Sonnenrand und bei bedeutenden Regionen (δ, ≥ 300 MH,
+  X- oder mehrere M-Flares) per Push am Tag der Rückkehr. Erscheint dort eine neue NOAA-Gruppe, ordnet Solux sie zu,
+  z. B. „AR 4590 ist die frühere AR 4566“.
 - Einstellungen über das Zahnrad, Beenden über das ×, verschiebbar am Rand und an der Titelzeile
 - Startbild (H-Alpha-Sonne mit Schriftzug) nach manuellem Start und nach Updates
 - Sonnensymbol in der Menüleiste: Widget ein- und ausblenden, Aufnahmen, Einstellungen, Beenden
@@ -80,6 +85,16 @@ beschriftet und mit Legende und Textdatei gespeichert.
   Dazu kommen ein Abschnitt in der Legende, ein Satz in der Zusammenfassung und eine vollständige Liste in der
   Textdatei. Flares der letzten 60 Tage hat Solux lokal. Für ältere Aufnahmen lädt es die Tagesliste aus dem
   NOAA-Ereignisarchiv (NCEI, lückenlos seit 1996) und speichert sie dauerhaft.
+- **Kalzium-Plages** (neu in 1.7): In jeder Kalziumaufnahme erkennt Solux die hellen Plages. Die Helligkeit wird
+  dafür ringweise gegen den Median gemessen, sodass die Randverdunkelung herausfällt. Pro Plage gibt Solux an:
+  - Fläche in MH, perspektivisch entzerrt
+  - Mehrhelligkeit
+  - NOAA-Region bzw. „neu?“
+
+  Dazu kommt der Anteil der Halbkugel, den alle Plages zusammen bedecken. Die Plages sind im Bild umrandet
+  (abschaltbar) und stehen in Legende, Zusammenfassung und Textdatei. Das Tagebuch zeigt den Verlauf des Plage-Anteils
+  über alle Kalziumaufnahmen, beim Verfolgen einer Region zusätzlich ihre Plage-Fläche. Die Werte hängen von der
+  Bildbearbeitung ab und sind Vergleichswerte für eigene Aufnahmen mit gleichem Arbeitsablauf.
 - **Bildschärfe:** Solux misst die Breite des Randabfalls in Bogensekunden. Bei Weißlicht kalibriert das automatisch das
   Seeing-Modell (siehe unten).
 - **Beobachtungstagebuch** (Knopf „Tagebuch“): Jede ausgewertete Aufnahme wird automatisch mit diesen Angaben gespeichert:

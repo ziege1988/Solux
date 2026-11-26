@@ -717,6 +717,77 @@
     return { list: out.sort((a, b) => b.height * Math.sqrt(b.width) - a.height * Math.sqrt(a.width)).slice(0, opts.max || 10), coverage };
   }
 
-  const api = { skyInfo, normalizeSky, boxBlur, textureIndex, limbSharpness, measureProminences, detectBlobs, matchPatterns, alignSurface, fitSimilarity, toGray, downsample, detectDisc, classifyImage, fitCircleFixedR, polarContrast, featureMap, correlate, countGroups, clusterGroups, align, detectSpots, matchSpots, bilinear };
+  /**
+   * Kalzium-Plages erkennen und vermessen.
+   * Helligkeit ringweise auf den Median normiert (Randverdunkelung fällt heraus), leicht geglättet (Netzwerk
+   * soll nicht zählen), Schwelle aus der robusten Streuung; benachbarte Teile werden zusammengefasst.
+   * Fläche in MH (millionstel Sonnenhalbkugel), perspektivisch korrigiert (÷ µ).
+   * Rückgabe: {plages:[{u, v, areaMH, excess, peak, px}], totalMH, coverage (%), meanExcess, threshold,
+   *            mask:{data, w, h, k}}  – u/v und Maske in Pixeln des übergebenen Bildes (Maske verkleinert um k)
+   */
+  function detectPlages(g, w, h, disc, opts = {}) {
+    const f = Math.max(1, disc.r / (opts.gridR || 300));
+    const D = downsample(g, w, h, f), gw = D.w, gh = D.h, k = D.scale;
+    const cx = disc.cx * k, cy = disc.cy * k, R = disc.r * k, rMax = opts.rMax || 0.97;
+    // Ring-Median (interpoliert)
+    const NB = 60, bins = Array.from({ length: NB }, () => []);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      const rr = Math.hypot(x - cx, y - cy) / R; if (rr >= rMax) continue;
+      if ((x + y) % 2) continue;
+      bins[Math.min(NB - 1, (rr * NB) | 0)].push(D.data[y * gw + x]);
+    }
+    const med = bins.map((b) => { if (!b.length) return NaN; b.sort((p, q) => p - q); return b[b.length >> 1]; });
+    for (let i = 0; i < NB; i++) if (Number.isNaN(med[i])) med[i] = med[i - 1] || 1;
+    const ringMed = (rr) => { const fb = Math.max(0, Math.min(NB - 1.001, rr * NB - 0.5)), i0 = fb | 0; return med[i0] + (med[Math.min(NB - 1, i0 + 1)] - med[i0]) * (fb - i0); };
+    const q = new Float32Array(gw * gh), inside = new Uint8Array(gw * gh), mu = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      const i = y * gw + x, rr = Math.hypot(x - cx, y - cy) / R;
+      if (rr >= rMax) continue;
+      inside[i] = 1; mu[i] = Math.sqrt(Math.max(0.05, 1 - rr * rr));
+      q[i] = D.data[i] / (ringMed(rr) || 1);
+    }
+    const sm = boxBlur(q, gw, gh, Math.max(1, Math.round(R * (opts.smooth || 0.006))));
+    // robuste Streuung innerhalb der Scheibe -> Schwelle
+    const vals = []; for (let i = 0; i < sm.length; i += 3) if (inside[i]) vals.push(sm[i]);
+    vals.sort((p, q2) => p - q2);
+    const m0 = vals[vals.length >> 1] || 1;
+    const dev = vals.map((v) => Math.abs(v - m0)).sort((p, q2) => p - q2);
+    const sigma = (dev[dev.length >> 1] || 0.02) * 1.4826;
+    const thr = m0 + Math.max(opts.minExcess || 0.12, (opts.kSigma || 3.5) * sigma);
+    const mask = new Uint8Array(gw * gh);
+    for (let i = 0; i < mask.length; i++) if (inside[i] && sm[i] > thr) mask[i] = 1;
+    // Teile zusammenfassen: Maske für die Gruppierung um ≈ 1 % R aufweiten
+    const dil = Math.max(1, Math.round(R * (opts.merge || 0.012)));
+    const grow = boxBlur(Float32Array.from(mask), gw, gh, dil);
+    const lab = new Int32Array(gw * gh).fill(-1), comps = [];
+    for (let i0 = 0; i0 < lab.length; i0++) {
+      if (lab[i0] >= 0 || !(grow[i0] > 0.001) || !inside[i0]) continue;
+      const id = comps.length, st = [i0]; lab[i0] = id;
+      const c = { n: 0, area: 0, sx: 0, sy: 0, ex: 0, peak: 0 };
+      while (st.length) {
+        const i = st.pop(), x = i % gw, y = (i / gw) | 0;
+        if (mask[i]) { const a = 1 / mu[i]; c.n++; c.area += a; c.sx += x * a; c.sy += y * a; c.ex += (q[i] - m0) * a; c.peak = Math.max(c.peak, sm[i] - m0); }
+        for (const j of [i - 1, i + 1, i - gw, i + gw]) {
+          if (j < 0 || j >= lab.length || lab[j] >= 0 || !(grow[j] > 0.001) || !inside[j]) continue;
+          if ((j === i - 1 && x === 0) || (j === i + 1 && x === gw - 1)) continue;
+          lab[j] = id; st.push(j);
+        }
+      }
+      comps.push(c);
+    }
+    const pxMH = 1e6 / (2 * Math.PI * R * R); // ein Pixel (Scheibenmitte) in MH
+    const minMH = opts.minMH || 40;
+    comps.forEach((c) => { c.keep = c.n && c.area * pxMH >= minMH; });
+    // Maske nur mit den gezählten Plages (kleine Netzwerk-Lichtpunkte fallen heraus)
+    for (let i = 0; i < mask.length; i++) if (mask[i] && !(lab[i] >= 0 && comps[lab[i]].keep)) mask[i] = 0;
+    const plages = comps.filter((c) => c.keep).map((c) => ({
+      u: c.sx / c.area / k, v: c.sy / c.area / k, areaMH: Math.round(c.area * pxMH), excess: c.ex / c.area, peak: c.peak, px: c.n,
+    })).sort((a, b) => b.areaMH - a.areaMH);
+    const totalMH = plages.reduce((t, p) => t + p.areaMH, 0);
+    let ex = 0, ar = 0; for (let i = 0; i < q.length; i++) if (inside[i]) { ar += 1 / mu[i]; if (mask[i]) ex += (q[i] - m0) / mu[i]; }
+    return { plages, totalMH, coverage: totalMH / 1e4, meanExcess: ar ? ex / ar : 0, threshold: thr - m0, sigma, mask: { data: mask, w: gw, h: gh, k } };
+  }
+
+  const api = { detectPlages, skyInfo, normalizeSky, boxBlur, textureIndex, limbSharpness, measureProminences, detectBlobs, matchPatterns, alignSurface, fitSimilarity, toGray, downsample, detectDisc, classifyImage, fitCircleFixedR, polarContrast, featureMap, correlate, countGroups, clusterGroups, align, detectSpots, matchSpots, bilinear };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SoluxAlign = api;
 })(typeof self !== 'undefined' ? self : this);

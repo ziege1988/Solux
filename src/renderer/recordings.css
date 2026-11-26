@@ -120,3 +120,9 @@ body.diary-on .main, body.diary-on .bottom { display: none; }
 .ghost.on { border-color: var(--sun); color: var(--sun); }
 .seg button.on[data-k] { color: #1a1205; }
 .dhd select, .tctl select { background: var(--ink); border: 1px solid var(--line2); border-radius: 7px; padding: 6px 8px; color: var(--text); font: 12px var(--f-body); }
+.dtrend { margin: 14px 16px 0; padding: 10px 12px; background: #121214; border: 1px solid var(--line2); border-radius: 12px; }
+.dtrend[hidden] { display: none; }
+.dtrend .dth { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+.dtrend svg { display: block; max-width: 100%; font: 11px var(--f-mono); fill: #8e8a83; }
+.dtrend circle { fill: #d7c0ff; stroke: #0b0b0c; stroke-width: 2; cursor: pointer; }
+.dtrend circle:hover { fill: #fff; }
